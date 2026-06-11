@@ -77,7 +77,7 @@ def create_converter(enable_ocr: bool = True) -> DocumentConverter:
 
 def parse_document(file_path: str, converter: DocumentConverter = None) -> ParsedDocument:
     """
-    Parse a single document using Docling with Tesseract OCR.
+    Parse a single document using Docling (or plain read for .txt files).
     
     Args:
         file_path: Path to the document file
@@ -93,10 +93,25 @@ def parse_document(file_path: str, converter: DocumentConverter = None) -> Parse
 
     print(f"  Parsing: {path.name} ...")
 
+    # .txt files: read directly (Docling doesn't support .txt)
+    if path.suffix.lower() == ".txt":
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return ParsedDocument(
+            source=path.name,
+            markdown=content,
+            metadata={
+                "source": path.name,
+                "file_path": str(path.absolute()),
+                "file_type": ".txt",
+                "size_bytes": path.stat().st_size,
+            }
+        )
+
     if converter is None:
         converter = create_converter()
 
-    # Convert the document
+    # Convert the document using Docling
     result = converter.convert(str(path))
 
     # Export to markdown (preserves structure: headings, tables, lists)
