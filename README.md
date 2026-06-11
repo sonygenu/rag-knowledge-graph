@@ -319,11 +319,99 @@ Neptune runs in your AWS VPC. To set it up:
 |---------------|--------|---------|
 | File type detection (magic bytes) | ✅ Complete | Validates format using first 261 bytes, rejects unsupported types with 4xx |
 | Document parsing (Docling + RapidOCR) | ✅ Complete | Supports PDF, DOCX, PPTX, HTML, Markdown, TXT |
-| Multi-format testing | ✅ Complete | Tested with .md, .txt, .html on bastion |
-| Chunking | ⬜ Not started | Split parsed docs into segments |
+| Excel parsing (openpyxl) | ✅ Complete | Streaming read_only mode, converts sheets to markdown tables |
+| Multi-format testing | ✅ Complete | Tested with .md, .txt, .html, .xlsx on bastion |
+| Chunking | 🔧 In Progress | Hybrid strategy — see below |
 | PDF parsing with OCR | ⬜ Not started | Scanned PDF support via RapidOCR |
 | S3 integration | ⬜ Not started | Load documents from S3 buckets |
 | Batch processing | ⬜ Not started | Process large document sets |
+
+---
+
+## Chunking Strategy
+
+### Why Chunk?
+
+LLMs have context limits and perform better on focused text. Chunking gives us:
+
+- **Better entity extraction** — LLM focuses on one topic at a time
+- **Lower cost** — smaller inputs = fewer tokens
+- **Traceability** — know exactly which section an entity came from
+- **Vector search readiness** — embeddings work best on focused passages
+
+### Approach: Hybrid Format-Aware Chunking
+
+Since all document types are parsed into markdown, the chunker detects the content structure and applies the best splitting strategy:
+
+```
+ParsedDocument (markdown)
+    │
+    ├── Has headers (##, ###)?
+    │       YES → Section-based chunking
+    │       Split by headers, merge small sections, split large ones
+    │
+    ├── Is tabular (| ... |)?
+    │       YES → Row-group chunking
+    │       Keep headers + N rows per chunk
+    │
+    └── Plain text, no structure?
+            → Paragraph-based chunking
+            Split on \n\n, accumulate until size limit
+```
+
+### Strategy by Source Format
+
+| Source Format | Chunking Approach | Why |
+|--------------|-------------------|-----|
+| Markdown/HTML | Section-based (split by headers) | Headings = natural topic boundaries |
+| TXT | Paragraph-based with size cap | No headers, but paragraphs are meaningful |
+| Excel/CSV | Sheet + row-group based | Each sheet is a topic; rows are entities |
+| PDF | Section-based (Docling preserves headers) | Parsed markdown has headers |
+
+### Implementation: Pure Python (No Extra Libraries)
+
+The chunker is implemented in pure Python — no ML models, no heavy dependencies:
+
+| Task | How |
+|------|-----|
+| Split by headers | `re.split(r'^#{1,4} .+$', text)` |
+| Split by paragraphs | `str.split("\n\n")` |
+| Detect tables | `line.startswith("\|")` |
+| Group table rows | Simple loop + counter |
+| Track chunk size | `len(string)` |
+| Metadata per chunk | Python dataclass |
+
+### Chunk Output Format
+
+Each chunk carries metadata for traceability:
+
+```python
+Chunk(
+    content="## Team Members\n| Name | Role |...",
+    metadata={
+        "source": "team-wiki.md",
+        "section": "Team Members",
+        "chunk_index": 2,
+        "content_type": "table",  # or "narrative"
+        "char_count": 450,
+    }
+)
+```
+
+### Handling Large Documents (500 MB+)
+
+For files that can't fit in memory:
+
+| Document Size | Strategy |
+|--------------|----------|
+| < 10 MB | Load in memory, split by headers/paragraphs |
+| 10-100 MB | Stream page-by-page, track sections as you go |
+| 100 MB+ | Stream page-by-page, emit chunks immediately, hold max 2 chunks in memory |
+
+```
+Stream page by page → detect headers → track current section → emit chunks
+Memory usage: ~10 MB regardless of file size
+```
 
 ---
 
