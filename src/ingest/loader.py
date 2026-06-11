@@ -4,6 +4,8 @@ Document Loader & Parser using Docling with RapidOCR.
 Uses Docling with SimplePipeline and RapidOCR for scanned PDFs.
 RapidOCR is Python-only (ONNX-based) — no system packages needed.
 
+Includes file type validation using magic bytes (first 261 bytes only).
+
 Usage:
     python -m src.ingest.loader                    # Parse all files in data/
     python -m src.ingest.loader data/myfile.pdf    # Parse a specific file
@@ -13,41 +15,131 @@ Prerequisites (on bastion):
 """
 import os
 import sys
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field
 
+import filetype
 from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
 from docling.pipeline.simple_pipeline import SimplePipeline
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+# --- File Type Validation ---
+
+# Binary formats detected via magic bytes
+SUPPORTED_BINARY_MIMES = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+}
+
+# Text formats detected via file extension (no magic bytes for these)
+SUPPORTED_TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".html", ".htm"}
+
+# All supported extensions (for directory scanning)
+ALL_SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".html", ".htm", ".md", ".txt", ".markdown"}
+
+
+class UnsupportedFormatError(Exception):
+    """Raised when a document format is not supported (4xx equivalent)."""
+    pass
+
+
+def detect_file_type(file_path: str) -> str:
+    """
+    Detect document type using magic bytes + extension fallback.
+    
+    Only reads the first 261 bytes of the file — safe for any file size.
+    
+    Args:
+        file_path: Path to the file
+    
+    Returns:
+        Normalized file extension (e.g., ".pdf", ".docx", ".md")
+    
+    Raises:
+        UnsupportedFormatError: If file type is not supported (4xx to customer)
+    """
+    path = Path(file_path)
+    
+    # Step 1: Try magic bytes (reads only first 261 bytes)
+    kind = filetype.guess(file_path)
+    
+    if kind is not None:
+        logger.info(
+            f"Magic bytes detected: mime={kind.mime}, "
+            f"extension={kind.extension}, file={path.name}"
+        )
+        
+        if kind.mime in SUPPORTED_BINARY_MIMES:
+            detected_type = SUPPORTED_BINARY_MIMES[kind.mime]
+            logger.info(f"✓ Validated binary format: {detected_type} for {path.name}")
+            return detected_type
+        else:
+            logger.warning(
+                f"✗ Unsupported binary format: mime={kind.mime}, "
+                f"extension={kind.extension}, file={path.name}"
+            )
+            raise UnsupportedFormatError(
+                f"Unsupported file format: {kind.mime} ({kind.extension}). "
+                f"Supported binary formats: PDF, DOCX, PPTX"
+            )
+    
+    # Step 2: No magic bytes found — likely a text file, check extension
+    ext = path.suffix.lower()
+    logger.info(
+        f"No magic bytes found (text file). "
+        f"Falling back to extension: '{ext}' for {path.name}"
+    )
+    
+    if ext in SUPPORTED_TEXT_EXTENSIONS:
+        logger.info(f"✓ Validated text format: {ext} for {path.name}")
+        return ext
+    
+    # Step 3: Unknown format — reject
+    logger.warning(f"✗ Unsupported format: extension='{ext}', file={path.name}")
+    raise UnsupportedFormatError(
+        f"Cannot determine file type for: {path.name}. "
+        f"Extension '{ext}' is not supported. "
+        f"Supported formats: PDF, DOCX, PPTX, HTML, Markdown, TXT"
+    )
+
+
+# --- Document Parsing ---
 
 @dataclass
 class ParsedDocument:
     """A parsed document with structured output."""
     source: str
     markdown: str
+    detected_type: str
     metadata: dict = field(default_factory=dict)
 
     def __repr__(self):
-        return f"ParsedDocument(source='{self.source}', chars={len(self.markdown)})"
+        return (
+            f"ParsedDocument(source='{self.source}', "
+            f"type='{self.detected_type}', chars={len(self.markdown)})"
+        )
 
 
 def create_converter(enable_ocr: bool = True) -> DocumentConverter:
     """
     Create a Docling converter with RapidOCR.
-    
-    - PDFs: Uses pypdfium2 backend + RapidOCR (Python-only, ONNX-based)
-    - DOCX/PPTX/HTML/MD: Uses SimplePipeline (no ML models)
-    
-    Args:
-        enable_ocr: Whether to enable OCR for scanned PDFs (default: True)
     """
-    # PDF options with RapidOCR
     pdf_options = PdfPipelineOptions()
     pdf_options.do_ocr = enable_ocr
-    pdf_options.do_table_structure = False  # Skip heavy table model
+    pdf_options.do_table_structure = False
 
     if enable_ocr:
         pdf_options.ocr_options = RapidOcrOptions()
@@ -77,118 +169,113 @@ def create_converter(enable_ocr: bool = True) -> DocumentConverter:
 
 def parse_document(file_path: str, converter: DocumentConverter = None) -> ParsedDocument:
     """
-    Parse a single document using Docling (or plain read for .txt files).
+    Validate file type and parse document.
     
-    Args:
-        file_path: Path to the document file
-        converter: Optional pre-created converter (reuse for batch processing)
-    
-    Returns:
-        ParsedDocument with markdown output and metadata
+    1. Validates file type using magic bytes (first 261 bytes only)
+    2. Rejects unsupported formats with UnsupportedFormatError (4xx)
+    3. Parses supported documents using Docling or plain read
     """
     path = Path(file_path)
 
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    print(f"  Parsing: {path.name} ...")
+    # Step 1: Validate file type (reads only 261 bytes)
+    detected_type = detect_file_type(file_path)
+    logger.info(f"Processing {path.name} as {detected_type}")
 
-    # .txt files: read directly (Docling doesn't support .txt)
-    if path.suffix.lower() == ".txt":
+    # Step 2: Parse based on detected type
+    if detected_type == ".txt":
+        # Plain text — read directly
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
+        logger.info(f"Read {len(content)} chars from text file {path.name}")
         return ParsedDocument(
             source=path.name,
             markdown=content,
+            detected_type=detected_type,
             metadata={
                 "source": path.name,
                 "file_path": str(path.absolute()),
-                "file_type": ".txt",
+                "file_type": detected_type,
                 "size_bytes": path.stat().st_size,
             }
         )
 
+    # All other supported formats — use Docling
     if converter is None:
         converter = create_converter()
 
-    # Convert the document using Docling
     result = converter.convert(str(path))
-
-    # Export to markdown (preserves structure: headings, tables, lists)
     markdown_output = result.document.export_to_markdown()
 
-    # Collect metadata
-    metadata = {
-        "source": path.name,
-        "file_path": str(path.absolute()),
-        "file_type": path.suffix.lower(),
-        "size_bytes": path.stat().st_size,
-    }
+    logger.info(f"Docling parsed {path.name} → {len(markdown_output)} chars")
 
     return ParsedDocument(
         source=path.name,
         markdown=markdown_output,
-        metadata=metadata,
+        detected_type=detected_type,
+        metadata={
+            "source": path.name,
+            "file_path": str(path.absolute()),
+            "file_type": detected_type,
+            "size_bytes": path.stat().st_size,
+        }
     )
 
 
 def parse_all_documents(directory: str) -> list:
-    """
-    Parse all supported documents in a directory.
-    
-    Supported formats: .pdf, .docx, .pptx, .html, .md, .txt
-    """
-    supported_extensions = {".pdf", ".docx", ".pptx", ".html", ".md", ".txt"}
+    """Parse all supported documents in a directory."""
     documents = []
 
     dir_path = Path(directory)
     if not dir_path.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
 
-    files = sorted(
-        f for f in dir_path.iterdir()
-        if f.suffix.lower() in supported_extensions
-    )
+    files = sorted(f for f in dir_path.iterdir() if f.is_file())
 
     if not files:
-        print(f"  No supported files found in {directory}")
-        print(f"  Supported formats: {', '.join(sorted(supported_extensions))}")
+        logger.warning(f"No files found in {directory}")
         return documents
 
-    print(f"  Found {len(files)} file(s) to parse\n")
+    logger.info(f"Found {len(files)} file(s) in {directory}")
 
-    # Create converter once and reuse for all documents
     converter = create_converter()
 
     for file_path in files:
         try:
             doc = parse_document(str(file_path), converter=converter)
             documents.append(doc)
-            print(f"  ✓ {file_path.name} → {len(doc.markdown)} chars")
+            print(f"  ✓ {file_path.name} → {doc.detected_type} → {len(doc.markdown)} chars")
+        except UnsupportedFormatError as e:
+            print(f"  ✗ {file_path.name} → REJECTED: {e}")
         except Exception as e:
-            print(f"  ✗ {file_path.name} → Error: {e}")
+            print(f"  ✗ {file_path.name} → ERROR: {e}")
 
     return documents
 
 
 if __name__ == "__main__":
-    # Determine data directory
     data_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 
     if len(sys.argv) > 1:
-        # Parse a specific file
         file_path = sys.argv[1]
-        doc = parse_document(file_path)
-        print(f"\n{'='*60}")
-        print(f"Source: {doc.source}")
-        print(f"Metadata: {doc.metadata}")
-        print(f"{'='*60}")
-        print(f"\n--- Markdown Output ---\n")
-        print(doc.markdown[:3000])
-        if len(doc.markdown) > 3000:
-            print(f"\n... ({len(doc.markdown) - 3000} more characters)")
+        try:
+            doc = parse_document(file_path)
+            print(f"\n{'='*60}")
+            print(f"Source: {doc.source}")
+            print(f"Detected Type: {doc.detected_type}")
+            print(f"Metadata: {doc.metadata}")
+            print(f"{'='*60}")
+            print(f"\n--- Parsed Output ---\n")
+            print(doc.markdown[:3000])
+            if len(doc.markdown) > 3000:
+                print(f"\n... ({len(doc.markdown) - 3000} more characters)")
+        except UnsupportedFormatError as e:
+            print(f"\n❌ REJECTED (400): {e}")
+        except Exception as e:
+            print(f"\n❌ ERROR: {e}")
     else:
-        # Parse all documents in data/
         print(f"\n📄 Parsing documents from: {os.path.abspath(data_dir)}\n")
         docs = parse_all_documents(data_dir)
         print(f"\n{'='*60}")
