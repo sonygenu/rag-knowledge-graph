@@ -10,12 +10,43 @@ A Retrieval-Augmented Generation system powered by Neo4j knowledge graphs for ac
 
 Standard RAG works like this: chunk documents → embed them → retrieve top-k by vector similarity → feed to LLM. It works well for "find me relevant passages" but breaks down when questions require:
 
-- **Relationships between entities** — "What projects is Alice working on that depend on Service X?"
-- **Multi-hop reasoning** — "What team owns the service that feeds this pipeline?"
-- **Structured facts** — "Who is the on-call for this alarm right now?"
-- **Disambiguation** — "Which 'Plato' — the ingestion service or the philosopher?"
+## Knowledge Graph RAG — Real-World Examples
 
-Vector similarity retrieves semantically close text — but it has no concept of connections.
+### 1. Relationships Between Entities
+
+**Query:** "What marketing campaigns is Sarah managing that use the email automation platform?"
+
+- **Pure vector RAG** retrieves documents mentioning Sarah or email automation — but can't connect them
+- **KG traverses:** `Sarah → owns → Campaigns → depends_on → EmailPlatform`
+- **Returns:** "Sarah manages 3 active campaigns (Spring Launch, Q3 Nurture, Re-engagement) all routed through the email platform"
+
+### 2. Multi-hop Reasoning
+
+**Query:** "Who is responsible for the data source that powers our sales dashboard?"
+
+- **Pure vector RAG:** returns docs about dashboards or data sources — probably misses the ownership chain
+- **KG traverses:** `SalesDashboard → reads_from → CRMExport → owned_by → RevOpsTeam → contact → jane@company.com`
+- 3 hops, zero ambiguity — impossible with similarity search alone
+
+### 3. Structured Facts
+
+**Query:** "Who is the primary contact for the payments system this weekend?"
+
+- **Pure vector RAG:** retrieves old runbooks, past incident docs — stale and unstructured
+- **KG holds:** `PaymentsSystem → oncall_rotation → {weekOf: Jun 9} → Person: Marcus → phone: ...`
+- Returns a precise, live structured fact — not a paragraph to parse
+
+### 4. Disambiguation
+
+**Query:** "Tell me about Falcon — the programming language or the fighter jet?"
+
+- **Pure vector RAG:** mixes results from both meanings based on nearest embeddings — confusing
+- **KG maintains distinct nodes:** `Falcon (Entity: Aircraft, F-16)` vs `Falcon (Entity: ProgrammingLanguage, OpenSource)`
+- User context (e.g. they work in aerospace) tips the KG to resolve to the right entity before retrieval even starts
+
+---
+
+> **The pattern across all four:** Vector search finds what's *nearby*. Knowledge graphs know what's *connected*, what's *current*, and what something actually *is*. Together, they make RAG answers feel less like "here are some relevant paragraphs" and more like "here is the answer."
 
 ### What Knowledge Graphs Add
 
