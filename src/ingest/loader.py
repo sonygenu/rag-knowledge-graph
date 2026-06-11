@@ -42,13 +42,17 @@ SUPPORTED_BINARY_MIMES = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
 
 # Text formats detected via file extension (no magic bytes for these)
-SUPPORTED_TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".html", ".htm"}
+SUPPORTED_TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".html", ".htm", ".csv"}
 
 # All supported extensions (for directory scanning)
-ALL_SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".html", ".htm", ".md", ".txt", ".markdown"}
+ALL_SUPPORTED_EXTENSIONS = {
+    ".pdf", ".docx", ".pptx", ".xlsx", ".xls",
+    ".html", ".htm", ".md", ".txt", ".markdown", ".csv"
+}
 
 
 class UnsupportedFormatError(Exception):
@@ -93,7 +97,7 @@ def detect_file_type(file_path: str) -> str:
             )
             raise UnsupportedFormatError(
                 f"Unsupported file format: {kind.mime} ({kind.extension}). "
-                f"Supported binary formats: PDF, DOCX, PPTX"
+                f"Supported binary formats: PDF, DOCX, PPTX, XLSX"
             )
     
     # Step 2: No magic bytes found — likely a text file, check extension
@@ -112,7 +116,7 @@ def detect_file_type(file_path: str) -> str:
     raise UnsupportedFormatError(
         f"Cannot determine file type for: {path.name}. "
         f"Extension '{ext}' is not supported. "
-        f"Supported formats: PDF, DOCX, PPTX, HTML, Markdown, TXT"
+        f"Supported formats: PDF, DOCX, PPTX, XLSX, HTML, Markdown, TXT, CSV"
     )
 
 
@@ -173,7 +177,7 @@ def parse_document(file_path: str, converter: DocumentConverter = None) -> Parse
     
     1. Validates file type using magic bytes (first 261 bytes only)
     2. Rejects unsupported formats with UnsupportedFormatError (4xx)
-    3. Parses supported documents using Docling or plain read
+    3. Parses supported documents using Docling, openpyxl, or plain read
     """
     path = Path(file_path)
 
@@ -202,6 +206,27 @@ def parse_document(file_path: str, converter: DocumentConverter = None) -> Parse
             }
         )
 
+    if detected_type == ".csv":
+        # CSV — read as plain text (structured already)
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        logger.info(f"Read {len(content)} chars from CSV file {path.name}")
+        return ParsedDocument(
+            source=path.name,
+            markdown=content,
+            detected_type=detected_type,
+            metadata={
+                "source": path.name,
+                "file_path": str(path.absolute()),
+                "file_type": detected_type,
+                "size_bytes": path.stat().st_size,
+            }
+        )
+
+    if detected_type == ".xlsx":
+        # Excel — parse with openpyxl in read_only mode (memory-safe)
+        return parse_excel_file(file_path, detected_type)
+
     # All other supported formats — use Docling
     if converter is None:
         converter = create_converter()
@@ -220,6 +245,84 @@ def parse_document(file_path: str, converter: DocumentConverter = None) -> Parse
             "file_path": str(path.absolute()),
             "file_type": detected_type,
             "size_bytes": path.stat().st_size,
+        }
+    )
+
+
+def parse_excel_file(file_path: str, detected_type: str) -> ParsedDocument:
+    """
+    Parse an Excel file using openpyxl in read_only mode.
+    
+    Converts each sheet to a markdown table.
+    Uses read_only=True for memory safety (streams rows, doesn't load full file).
+    """
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise ImportError(
+            "openpyxl is required for Excel parsing. Install with: pip3 install openpyxl"
+        )
+
+    path = Path(file_path)
+    logger.info(f"Parsing Excel file: {path.name} (read_only mode)")
+
+    # read_only=True: streams rows, safe for large files
+    wb = load_workbook(str(path), read_only=True, data_only=True)
+
+    markdown_parts = []
+    total_rows = 0
+    sheet_count = 0
+
+    for sheet_name in wb.sheetnames:
+        sheet = wb[sheet_name]
+        sheet_count += 1
+        logger.info(f"  Processing sheet: '{sheet_name}'")
+
+        rows = []
+        for row in sheet.iter_rows(values_only=True):
+            # Convert None values to empty strings
+            rows.append([str(cell) if cell is not None else "" for cell in row])
+
+        if not rows:
+            logger.info(f"  Sheet '{sheet_name}' is empty, skipping")
+            continue
+
+        # Build markdown table
+        headers = rows[0]
+        markdown_parts.append(f"## Sheet: {sheet_name}\n")
+
+        # Header row
+        markdown_parts.append("| " + " | ".join(headers) + " |")
+        # Separator
+        markdown_parts.append("| " + " | ".join(["---"] * len(headers)) + " |")
+        # Data rows
+        for row in rows[1:]:
+            # Pad row if shorter than headers
+            padded = row + [""] * (len(headers) - len(row))
+            markdown_parts.append("| " + " | ".join(padded[:len(headers)]) + " |")
+            total_rows += 1
+
+        markdown_parts.append("")  # Empty line between sheets
+
+    wb.close()
+
+    markdown_output = "\n".join(markdown_parts)
+    logger.info(
+        f"Excel parsed: {sheet_count} sheet(s), "
+        f"{total_rows} data rows, {len(markdown_output)} chars"
+    )
+
+    return ParsedDocument(
+        source=path.name,
+        markdown=markdown_output,
+        detected_type=detected_type,
+        metadata={
+            "source": path.name,
+            "file_path": str(path.absolute()),
+            "file_type": detected_type,
+            "size_bytes": path.stat().st_size,
+            "num_sheets": sheet_count,
+            "num_rows": total_rows,
         }
     )
 
