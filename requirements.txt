@@ -2,6 +2,12 @@
 docling>=2.0.0
 rapidocr>=3.0.0
 
+# PDF text extraction (for OCR detection)
+pymupdf>=1.24.0
+
+# Image handling (for test PDF generation)
+pillow>=10.0.0
+
 # Excel parsing (streaming, memory-safe)
 openpyxl>=3.1.0
 

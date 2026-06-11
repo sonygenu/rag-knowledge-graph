@@ -4,14 +4,16 @@ Document Loader & Parser using Docling with RapidOCR.
 Uses Docling with SimplePipeline and RapidOCR for scanned PDFs.
 RapidOCR is Python-only (ONNX-based) — no system packages needed.
 
-Includes file type validation using magic bytes (first 261 bytes only).
+Includes:
+- File type validation using magic bytes (first 261 bytes only)
+- Smart OCR detection: skips OCR for digital PDFs, enables for scanned PDFs
 
 Usage:
     python -m src.ingest.loader                    # Parse all files in data/
     python -m src.ingest.loader data/myfile.pdf    # Parse a specific file
 
 Prerequisites (on bastion):
-    pip3 install docling rapidocr
+    pip3 install docling rapidocr pymupdf openpyxl
 """
 import os
 import sys
@@ -122,6 +124,79 @@ def detect_file_type(file_path: str) -> str:
 
 # --- Document Parsing ---
 
+# Minimum characters per page to consider it "has text" (digital PDF)
+MIN_CHARS_PER_PAGE = 50
+# Number of pages to sample for OCR detection
+OCR_DETECTION_PAGES = 3
+
+
+def needs_ocr(file_path: str) -> dict:
+    """
+    Determine if a PDF needs OCR by extracting text from the first few pages.
+    
+    Only reads a few pages — safe for large files.
+    
+    Returns:
+        dict with:
+            - needs_ocr: bool
+            - pages_checked: int
+            - avg_chars_per_page: float
+            - pdf_type: "digital", "scanned", or "hybrid"
+    """
+    try:
+        import fitz  # pymupdf
+    except ImportError:
+        logger.warning("pymupdf not installed — assuming OCR needed for all PDFs")
+        return {"needs_ocr": True, "pages_checked": 0, "avg_chars_per_page": 0, "pdf_type": "unknown"}
+
+    doc = fitz.open(file_path)
+    num_pages = len(doc)
+    pages_to_check = min(OCR_DETECTION_PAGES, num_pages)
+
+    total_chars = 0
+    pages_with_text = 0
+    pages_without_text = 0
+
+    for i in range(pages_to_check):
+        text = doc[i].get_text().strip()
+        char_count = len(text)
+        total_chars += char_count
+
+        if char_count >= MIN_CHARS_PER_PAGE:
+            pages_with_text += 1
+        else:
+            pages_without_text += 1
+
+    doc.close()
+
+    avg_chars = total_chars / pages_to_check if pages_to_check > 0 else 0
+
+    # Determine PDF type
+    if pages_without_text == 0:
+        pdf_type = "digital"
+        ocr_needed = False
+    elif pages_with_text == 0:
+        pdf_type = "scanned"
+        ocr_needed = True
+    else:
+        pdf_type = "hybrid"
+        ocr_needed = True  # OCR for pages that need it
+
+    logger.info(
+        f"PDF analysis: type={pdf_type}, pages_checked={pages_to_check}, "
+        f"avg_chars/page={avg_chars:.0f}, "
+        f"pages_with_text={pages_with_text}, pages_without_text={pages_without_text}"
+    )
+
+    return {
+        "needs_ocr": ocr_needed,
+        "pages_checked": pages_to_check,
+        "avg_chars_per_page": avg_chars,
+        "pdf_type": pdf_type,
+        "total_pages": num_pages,
+    }
+
+
 @dataclass
 class ParsedDocument:
     """A parsed document with structured output."""
@@ -227,9 +302,13 @@ def parse_document(file_path: str, converter: DocumentConverter = None) -> Parse
         # Excel — parse with openpyxl in read_only mode (memory-safe)
         return parse_excel_file(file_path, detected_type)
 
-    # All other supported formats — use Docling
+    # PDF — smart OCR detection
+    if detected_type == ".pdf":
+        return parse_pdf_smart(file_path, detected_type)
+
+    # All other supported formats (DOCX, PPTX, HTML, MD) — use Docling without OCR
     if converter is None:
-        converter = create_converter()
+        converter = create_converter(enable_ocr=False)
 
     result = converter.convert(str(path))
     markdown_output = result.document.export_to_markdown()
@@ -245,6 +324,51 @@ def parse_document(file_path: str, converter: DocumentConverter = None) -> Parse
             "file_path": str(path.absolute()),
             "file_type": detected_type,
             "size_bytes": path.stat().st_size,
+        }
+    )
+
+
+def parse_pdf_smart(file_path: str, detected_type: str) -> ParsedDocument:
+    """
+    Parse a PDF with smart OCR detection.
+    
+    1. Check if PDF is digital or scanned (reads first 3 pages)
+    2. If digital → parse without OCR (fast)
+    3. If scanned/hybrid → parse with RapidOCR (slower but necessary)
+    """
+    path = Path(file_path)
+
+    # Step 1: Detect if OCR is needed
+    ocr_info = needs_ocr(file_path)
+    ocr_needed = ocr_info["needs_ocr"]
+    pdf_type = ocr_info["pdf_type"]
+
+    logger.info(
+        f"PDF '{path.name}': type={pdf_type}, OCR={'ENABLED' if ocr_needed else 'SKIPPED'}"
+    )
+
+    # Step 2: Create converter with appropriate settings
+    converter = create_converter(enable_ocr=ocr_needed)
+
+    # Step 3: Parse
+    result = converter.convert(str(path))
+    markdown_output = result.document.export_to_markdown()
+
+    logger.info(f"PDF parsed: {path.name} → {len(markdown_output)} chars (OCR={ocr_needed})")
+
+    return ParsedDocument(
+        source=path.name,
+        markdown=markdown_output,
+        detected_type=detected_type,
+        metadata={
+            "source": path.name,
+            "file_path": str(path.absolute()),
+            "file_type": detected_type,
+            "size_bytes": path.stat().st_size,
+            "pdf_type": pdf_type,
+            "ocr_applied": ocr_needed,
+            "total_pages": ocr_info["total_pages"],
+            "avg_chars_per_page": ocr_info["avg_chars_per_page"],
         }
     )
 
