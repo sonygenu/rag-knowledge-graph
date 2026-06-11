@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head><title>Incident Report - INC-2026-0142</title></head>
+<body>
+
+<h1>Incident Report: INC-2026-0142</h1>
+
+<h2>Summary</h2>
+<p>On June 5, 2026, the Payment Service experienced a complete outage lasting 47 minutes. 
+All order payments failed during this window, impacting approximately 2,300 customers.</p>
+
+<h2>Timeline</h2>
+<table border="1">
+  <tr><th>Time (UTC)</th><th>Event</th></tr>
+  <tr><td>14:23</td><td>CloudWatch alarm triggers: Payment Service error rate > 50%</td></tr>
+  <tr><td>14:25</td><td>On-call engineer Alex Johnson paged</td></tr>
+  <tr><td>14:28</td><td>Alex confirms outage, begins investigation</td></tr>
+  <tr><td>14:35</td><td>Root cause identified: Stripe API key expired</td></tr>
+  <tr><td>14:42</td><td>New API key rotated and deployed</td></tr>
+  <tr><td>14:50</td><td>Service recovery confirmed, error rate back to normal</td></tr>
+  <tr><td>15:10</td><td>All queued payments reprocessed successfully</td></tr>
+</table>
+
+<h2>Root Cause</h2>
+<p>The Stripe API key used by the Payment Service expired on June 5 at 14:22 UTC. 
+The key rotation process, managed by the Security Team, failed to update the 
+secret in AWS Secrets Manager before expiration.</p>
+
+<h2>Impact</h2>
+<ul>
+  <li>2,300 customers experienced payment failures</li>
+  <li>Revenue delay of approximately $340,000</li>
+  <li>47 minutes of payment processing downtime</li>
+  <li>NPS impact: estimated -2 points</li>
+</ul>
+
+<h2>Action Items</h2>
+<table border="1">
+  <tr><th>Action</th><th>Owner</th><th>Due Date</th></tr>
+  <tr><td>Implement automated key rotation monitoring</td><td>Security Team</td><td>Jun 20, 2026</td></tr>
+  <tr><td>Add 7-day expiration warning alarm</td><td>Alex Johnson</td><td>Jun 12, 2026</td></tr>
+  <tr><td>Create runbook for payment key rotation</td><td>Payments Team</td><td>Jun 15, 2026</td></tr>
+  <tr><td>Add fallback to PayPal when Stripe fails</td><td>Alex Johnson</td><td>Jul 1, 2026</td></tr>
+</table>
+
+<h2>Attendees</h2>
+<p>Maria Santos (VP Engineering), Alex Johnson (Payments Lead), 
+David Chen (Security Team), Sarah Kim (Customer Experience)</p>
+
+</body>
+</html>

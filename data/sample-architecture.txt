@@ -1,0 +1,60 @@
+SYSTEM ARCHITECTURE: Order Processing Platform
+
+Overview
+========
+The Order Processing Platform handles all customer orders from placement through fulfillment.
+It processes approximately 50,000 orders per day across 3 regions.
+
+Components
+==========
+
+1. API Gateway
+   - Handles incoming order requests
+   - Rate limiting: 1000 req/sec per customer
+   - Authentication via OAuth 2.0
+   - Owner: Platform Team (lead: Maria Santos)
+
+2. Order Service
+   - Validates and creates orders
+   - Language: Java 17, Spring Boot
+   - Database: PostgreSQL (RDS)
+   - Dependencies: Inventory Service, Payment Service
+   - Owner: Orders Team (lead: James Park)
+
+3. Inventory Service
+   - Checks and reserves stock
+   - Language: Go 1.21
+   - Database: DynamoDB
+   - Dependencies: Warehouse API
+   - Owner: Supply Chain Team (lead: Priya Patel)
+
+4. Payment Service
+   - Processes payments via Stripe and PayPal
+   - Language: Python 3.11, FastAPI
+   - Dependencies: Stripe API, PayPal API, Fraud Detection Service
+   - Owner: Payments Team (lead: Alex Johnson)
+   - PCI DSS compliant
+
+5. Notification Service
+   - Sends order confirmations and updates
+   - Channels: Email (SES), SMS (SNS), Push (Firebase)
+   - Owner: Customer Experience Team (lead: Sarah Kim)
+
+Data Flow
+=========
+Customer -> API Gateway -> Order Service -> Inventory Service
+                                        -> Payment Service
+                                        -> Notification Service
+
+SLA Requirements
+================
+- Order placement: < 500ms p99
+- Payment processing: < 3s p99
+- Inventory check: < 200ms p99
+- Notification delivery: < 30s (email), < 5s (push)
+
+On-Call Rotation
+================
+Week of Jun 9: James Park (Orders), Priya Patel (Inventory)
+Week of Jun 16: Alex Johnson (Payments), Sarah Kim (Notifications)
+Emergency escalation: Maria Santos (Platform)
