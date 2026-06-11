@@ -1,4 +1,4 @@
-# Document parsing (Docling)
+# Document parsing (Docling with Tesseract OCR - lightweight, no PyTorch)
 docling>=2.0.0
 
 # AWS SDK
@@ -10,4 +10,3 @@ requests-aws4auth>=1.2.0
 
 # Utilities
 python-dotenv>=1.0.0
-pydantic>=2.7.0

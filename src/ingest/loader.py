@@ -1,20 +1,27 @@
 """
-Document Loader & Parser using Docling.
+Document Loader & Parser using Docling with Tesseract OCR.
 
-Docling converts PDF, DOCX, PPTX, HTML, and Markdown into structured
-representations preserving layout, tables, headings, and reading order.
+Uses Docling with SimplePipeline and Tesseract for OCR on scanned PDFs.
+Lightweight — no PyTorch required.
 
 Usage:
     python -m src.ingest.loader                    # Parse all files in data/
     python -m src.ingest.loader data/myfile.pdf    # Parse a specific file
+
+Prerequisites (on bastion):
+    sudo yum install tesseract -y
+    pip3 install docling
 """
 import os
 import sys
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional
 
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractOcrOptions
+from docling.pipeline.simple_pipeline import SimplePipeline
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 
 
 @dataclass
@@ -28,31 +35,74 @@ class ParsedDocument:
         return f"ParsedDocument(source='{self.source}', chars={len(self.markdown)})"
 
 
-def parse_document(file_path: str) -> ParsedDocument:
+def create_converter(enable_ocr: bool = True) -> DocumentConverter:
     """
-    Parse a single document using Docling.
+    Create a Docling converter with Tesseract OCR.
     
-    Docling handles: PDF, DOCX, PPTX, HTML, Markdown, Images
-    It preserves structure: headings, tables, reading order, metadata.
+    - PDFs: Uses pypdfium2 backend + Tesseract OCR (lightweight)
+    - DOCX/PPTX/HTML/MD: Uses SimplePipeline (no ML models)
+    
+    Args:
+        enable_ocr: Whether to enable OCR for scanned PDFs (default: True)
+    """
+    # PDF options with Tesseract OCR
+    pdf_options = PdfPipelineOptions()
+    pdf_options.do_ocr = enable_ocr
+    pdf_options.do_table_structure = False  # Skip heavy table model
+
+    if enable_ocr:
+        pdf_options.ocr_options = TesseractOcrOptions(
+            lang=["eng"],  # Add more languages as needed: ["eng", "spa", "fra"]
+        )
+
+    converter = DocumentConverter(
+        allowed_formats=[
+            InputFormat.PDF,
+            InputFormat.DOCX,
+            InputFormat.PPTX,
+            InputFormat.HTML,
+            InputFormat.MD,
+        ],
+        format_options={
+            InputFormat.PDF: PdfFormatOption(
+                pipeline_cls=SimplePipeline,
+                backend=PyPdfiumDocumentBackend,
+                pipeline_options=pdf_options,
+            ),
+            InputFormat.DOCX: WordFormatOption(
+                pipeline_cls=SimplePipeline,
+            ),
+        }
+    )
+
+    return converter
+
+
+def parse_document(file_path: str, converter: DocumentConverter = None) -> ParsedDocument:
+    """
+    Parse a single document using Docling with Tesseract OCR.
     
     Args:
         file_path: Path to the document file
+        converter: Optional pre-created converter (reuse for batch processing)
     
     Returns:
         ParsedDocument with markdown output and metadata
     """
     path = Path(file_path)
-    
+
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
     print(f"  Parsing: {path.name} ...")
 
-    # Create converter and process the document
-    converter = DocumentConverter()
+    if converter is None:
+        converter = create_converter()
+
+    # Convert the document
     result = converter.convert(str(path))
 
-    # Export to markdown (preserves structure)
+    # Export to markdown (preserves structure: headings, tables, lists)
     markdown_output = result.document.export_to_markdown()
 
     # Collect metadata
@@ -78,13 +128,13 @@ def parse_all_documents(directory: str) -> list:
     """
     supported_extensions = {".pdf", ".docx", ".pptx", ".html", ".md", ".txt"}
     documents = []
-    
+
     dir_path = Path(directory)
     if not dir_path.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
 
     files = sorted(
-        f for f in dir_path.iterdir() 
+        f for f in dir_path.iterdir()
         if f.suffix.lower() in supported_extensions
     )
 
@@ -95,9 +145,12 @@ def parse_all_documents(directory: str) -> list:
 
     print(f"  Found {len(files)} file(s) to parse\n")
 
+    # Create converter once and reuse for all documents
+    converter = create_converter()
+
     for file_path in files:
         try:
-            doc = parse_document(str(file_path))
+            doc = parse_document(str(file_path), converter=converter)
             documents.append(doc)
             print(f"  ✓ {file_path.name} → {len(doc.markdown)} chars")
         except Exception as e:
