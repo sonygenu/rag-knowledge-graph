@@ -489,13 +489,50 @@ After parsing and chunking, we have clean text segments. But text alone can't po
 
 ### Extraction Approaches Compared
 
-| Approach | What it extracts | Cost | Speed | Accuracy |
-|----------|-----------------|------|-------|----------|
-| **Rule-based (Regex)** | Emails, dates, IDs, URLs | Free | Instant | 100% for known patterns |
-| **NLP Libraries (spaCy)** | People, orgs, locations | Free | Fast | Good for standard entities |
-| **Custom NER Models** | Domain-specific entities | Free (after training) | Fast | Excellent (but needs training data) |
-| **LLM (Bedrock Claude)** | Entities + relationships + context | $$$ per call | Slow | Best for complex extraction |
-| **Hybrid (all of above)** | Everything | $$ (reduced LLM calls) | Mixed | Best overall |
+| Approach | What it extracts | Cost | Speed | Accuracy | Scalability (millions of docs) |
+|----------|-----------------|------|-------|----------|-------------------------------|
+| **Rule-based (Regex)** | Emails, dates, IDs, URLs | Free | Instant | 100% for known patterns | ✅ Excellent — runs at any scale, CPU-bound only |
+| **NLP Libraries (spaCy)** | People, orgs, locations | Free | Fast | Good for standard entities | ✅ Excellent — runs locally, horizontally scalable |
+| **Custom NER Models** | Domain-specific entities | Free (after training) | Fast | Excellent (but needs training data) | ✅ Excellent — deploy on GPU fleet, batch inference |
+| **LLM (Bedrock Claude)** | Entities + relationships + context | $$$ per call | Slow | Best for complex extraction | ⚠️ Bottleneck — rate limits, cost at scale, API latency |
+| **Open-Source RE Models (GLiREL, REBEL)** | Entities + relationships | Free | Medium | Good | ✅ Good — deploy on GPU fleet, no API limits |
+| **Hybrid (all of above)** | Everything | $$ (reduced LLM calls) | Mixed | Best overall | ✅ Best — LLM only for hard cases, cheap layers handle 80%+ |
+
+### Why LLMs Don't Scale Well for Millions of Documents
+
+| Bottleneck | Impact at 1M+ docs |
+|-----------|-------------------|
+| **Rate limits** | Bedrock throttles at ~100-1000 req/min depending on model |
+| **Cost** | 1M docs × 5 chunks × $0.003/call = $15,000+ per full extraction run |
+| **Latency** | 800ms per call × 5M chunks = ~46 days sequential (even parallel = days) |
+| **Non-deterministic** | Same doc may extract slightly different entities on re-run |
+
+### Scaling Strategy for Production
+
+```
+Millions of documents
+    │
+    ├── Layer 1: Regex (instant, free)
+    │   Extract: emails, dates, URLs, IDs, known patterns
+    │   Handles: ~20% of all entities
+    │
+    ├── Layer 2: spaCy / Custom NER (fast, free, scalable)
+    │   Extract: People, organizations, locations, standard entities
+    │   Handles: ~40% of all entities
+    │   Deploy: Horizontally on ECS/Lambda fleet
+    │
+    ├── Layer 3: Open-Source RE model (GLiREL) (medium, free, scalable)
+    │   Extract: Relationships between entities found in Layers 1-2
+    │   Handles: ~30% of relationships
+    │   Deploy: GPU instances (g5.xlarge), batch processing
+    │
+    └── Layer 4: LLM (slow, expensive, best quality)
+        Extract: Complex relationships, ambiguous cases, low-confidence items
+        Handles: ~10% of entities (the hardest cases)
+        Deploy: Bedrock with provisioned throughput
+```
+
+**Result:** LLM handles only ~10% of extraction work at scale, reducing cost from $15K to ~$1.5K per million documents while maintaining quality.
 
 ### Rule-Based (Regex)
 
