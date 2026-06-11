@@ -502,7 +502,7 @@ After parsing and chunking, we have clean text segments. But text alone can't po
 
 | Bottleneck | Impact at 1M+ docs |
 |-----------|-------------------|
-| **Rate limits** | Bedrock throttles at ~100-1000 req/min depending on model |
+| **Rate limits** | All LLM providers throttle API calls (typically 100-1000 req/min) |
 | **Cost** | 1M docs × 5 chunks × $0.003/call = $15,000+ per full extraction run |
 | **Latency** | 800ms per call × 5M chunks = ~46 days sequential (even parallel = days) |
 | **Non-deterministic** | Same doc may extract slightly different entities on re-run |
