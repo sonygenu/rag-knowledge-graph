@@ -8,7 +8,7 @@ A Retrieval-Augmented Generation system powered by Neo4j knowledge graphs for ac
 
 ### The Problem with Vanilla RAG
 
-Standard RAG works like this: chunk documents → embed them → retrieve top-k by vector similarity → feed to LLM. It works well for "find me relevant passages" but breaks down when questions require:
+Standard RAG works like this: chunk documents → embed them → retrieve top-k by vector similarity → feed to LLM. It works well for "find me relevant passages" 
 
 ## Knowledge Graph RAG — Real-World Examples
 
