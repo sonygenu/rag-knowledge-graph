@@ -328,6 +328,72 @@ Neptune runs in your AWS VPC. To set it up:
 
 ---
 
+## File Type Detection: How Magic Bytes Work
+
+### What Are Magic Bytes?
+
+Magic bytes are a hidden **file format identifier** embedded at the very start of every binary file. They're invisible to users — you never see them when opening a document. They exist for computers to identify the file format regardless of the file extension.
+
+If you open a PDF in a raw hex editor, you'd see:
+
+```
+Byte position:  0    1    2    3    4    5    6    ...
+Hex values:     25   50   44   46   2D   31   2E  ...
+As text:        %    P    D    F    -    1    .   ...
+```
+
+The first 4 bytes spell `%PDF` — that's the magic bytes.
+
+### Magic Bytes by File Type
+
+| File type | First raw bytes | Readable | What creates it |
+|-----------|----------------|----------|-----------------|
+| PDF | `25 50 44 46` | `%PDF` | Adobe, any PDF writer |
+| ZIP/DOCX/XLSX | `50 4B 03 04` | `PK..` | Microsoft Office (these are ZIP archives internally) |
+| PNG image | `89 50 4E 47` | `.PNG` | Any image editor |
+| JPEG image | `FF D8 FF` | `ÿØÿ` | Cameras, image editors |
+
+### Why Text Files Don't Have Magic Bytes
+
+Text files (`.txt`, `.md`, `.html`) are just raw text from byte 0. There's no stamp — the file starts immediately with your content:
+
+```
+Text file:   H  e  l  l  o     w  o  r  l  d
+PDF file:    %  P  D  F  -  1  .  7  [then actual content...]
+```
+
+That's why for text files we fall back to checking the file extension.
+
+### How We Use It (261 Bytes Only)
+
+Our code reads **only the first 261 bytes** of any file — safe for any file size (even 1 GB):
+
+```python
+filetype.guess("report.pdf")
+# Reads bytes 0-260 → sees "%PDF" → returns mime="application/pdf"
+
+filetype.guess("notes.md")
+# Reads bytes 0-260 → no known signature → returns None (fall back to extension)
+```
+
+### Scanned vs Digital PDFs
+
+Magic bytes **cannot** distinguish between digital and scanned PDFs — both start with `%PDF`. To detect scanned PDFs, we extract text from the first few pages:
+
+```
+File → Magic bytes → "It's a PDF"
+                         ↓
+              Extract text from first 3 pages
+                         ↓
+            ┌────────────┴────────────┐
+            ↓                         ↓
+   Has text (>50 chars/page)    No text (<50 chars/page)
+            ↓                         ↓
+    Digital PDF → skip OCR     Scanned PDF → run OCR
+```
+
+---
+
 ## Chunking Strategy
 
 ### Why Chunk?
