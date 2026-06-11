@@ -6,7 +6,15 @@ A Retrieval-Augmented Generation system powered by Neo4j knowledge graphs for ac
 
 ## What Is a Knowledge Graph?
 
-A knowledge graph is a way of representing information as a network of **nodes** (entities) connected by **edges** (relationships). Unlike tables or documents, a knowledge graph captures not just *what* things are, but *how they relate to each other*.
+A knowledge graph is a database that stores information in **Nodes** and **Relationships**.
+
+Both nodes and relationships can have **properties** — key-value pairs that add detail and context to the data.
+
+Nodes can be given **labels** to group them together — for example, `:Person`, `:Course`, `:Service`.
+
+Relationships always have a **type** and a **direction** — e.g., `(Sony) -[TEACHES]-> (Course)`.
+
+It represents information as a network of **nodes** (entities) connected by **edges** (relationships). Unlike tables or documents, a knowledge graph captures not just *what* things are, but *how they relate to each other*.
 
 ### The Building Blocks
 
