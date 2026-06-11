@@ -302,16 +302,28 @@ Neptune runs in your AWS VPC. To set it up:
 
 🚧 **In Progress** — building incrementally. This README will be updated as components are added.
 
-| Component | Status |
-|-----------|--------|
-| Project setup | ✅ |
-| Document ingestion pipeline | ⬜ |
-| Entity/relationship extraction | ⬜ |
-| Neo4j graph schema & loading | ⬜ |
-| Query engine (NL → Cypher) | ⬜ |
-| Hybrid retrieval (graph + vector) | ⬜ |
-| RAG chain with LLM | ⬜ |
-| Evaluation & benchmarks | ⬜ |
+| Component | Status | Details |
+|-----------|--------|---------|
+| Project setup | ✅ Complete | Repo, structure, infra (Neptune, bastion, IAM) |
+| Document ingestion pipeline | 🔧 In Progress | See breakdown below |
+| Entity/relationship extraction | ⬜ Not started | LLM-powered (Bedrock Claude) |
+| Neo4j graph schema & loading | ⬜ Not started | Write to Neptune |
+| Query engine (NL → Cypher) | ⬜ Not started | Natural language to openCypher |
+| Hybrid retrieval (graph + vector) | ⬜ Not started | Graph + vector combined |
+| RAG chain with LLM | ⬜ Not started | End-to-end Q&A |
+| Evaluation & benchmarks | ⬜ Not started | Accuracy, latency |
+
+### Document Ingestion Pipeline — Detailed Status
+
+| Sub-component | Status | Details |
+|---------------|--------|---------|
+| File type detection (magic bytes) | ✅ Complete | Validates format using first 261 bytes, rejects unsupported types with 4xx |
+| Document parsing (Docling + RapidOCR) | ✅ Complete | Supports PDF, DOCX, PPTX, HTML, Markdown, TXT |
+| Multi-format testing | ✅ Complete | Tested with .md, .txt, .html on bastion |
+| Chunking | ⬜ Not started | Split parsed docs into segments |
+| PDF parsing with OCR | ⬜ Not started | Scanned PDF support via RapidOCR |
+| S3 integration | ⬜ Not started | Load documents from S3 buckets |
+| Batch processing | ⬜ Not started | Process large document sets |
 
 ---
 
