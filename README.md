@@ -481,6 +481,87 @@ Memory usage: ~10 MB regardless of file size
 
 ---
 
+## Entity & Relationship Extraction
+
+### Why Extract Entities and Relationships?
+
+After parsing and chunking, we have clean text segments. But text alone can't power a knowledge graph — we need to identify the **entities** (people, services, teams) and **relationships** (who owns what, what depends on what) within that text and structure them as graph-ready data.
+
+### Extraction Approaches Compared
+
+| Approach | What it extracts | Cost | Speed | Accuracy |
+|----------|-----------------|------|-------|----------|
+| **Rule-based (Regex)** | Emails, dates, IDs, URLs | Free | Instant | 100% for known patterns |
+| **NLP Libraries (spaCy)** | People, orgs, locations | Free | Fast | Good for standard entities |
+| **Custom NER Models** | Domain-specific entities | Free (after training) | Fast | Excellent (but needs training data) |
+| **LLM (Bedrock Claude)** | Entities + relationships + context | $$$ per call | Slow | Best for complex extraction |
+| **Hybrid (all of above)** | Everything | $$ (reduced LLM calls) | Mixed | Best overall |
+
+### Rule-Based (Regex)
+
+Hand-written patterns. Fast and free, but only finds what you explicitly code for.
+
+```python
+emails = re.findall(r'\b[\w.]+@[\w.]+\.\w+\b', text)   # Finds emails
+dates = re.findall(r'\b\d{4}-\d{2}-\d{2}\b', text)      # Finds dates
+```
+
+**Limitation:** Can't understand context. Doesn't know "Plato" is a service vs a philosopher.
+
+### NLP Libraries (spaCy)
+
+Pre-trained Named Entity Recognition models. Runs locally, no API cost.
+
+```python
+import spacy
+nlp = spacy.load("en_core_web_sm")
+doc = nlp("Alice Chen is a Principal Engineer at Amazon")
+# Alice Chen → PERSON, Amazon → ORG
+```
+
+**Limitation:** Limited types (PERSON, ORG, DATE). Doesn't extract relationships. Misses domain-specific entities.
+
+### LLM-Based (Bedrock Claude)
+
+Prompt an LLM to extract entities and relationships with full context understanding.
+
+```
+Input chunk: "Alice Chen owns the Plato Ingestion Service. 
+              It depends on Neptune and Bedrock."
+
+LLM Output:
+  Entities: [Alice Chen (Person), Plato Ingestion (Service), Neptune (Service), Bedrock (Service)]
+  Relationships: [Alice Chen -OWNS-> Plato Ingestion, Plato Ingestion -DEPENDS_ON-> Neptune]
+```
+
+**Strength:** Understands context, extracts relationships, handles any domain without training data.
+
+### Our Approach: LLM-First, Optimize Later
+
+```
+Phase 1 (Now):   LLM extracts everything — validates the pipeline works
+Phase 2 (Later): Add spaCy as first pass (free, extracts obvious entities)
+Phase 3 (Later): Add regex for structured patterns (emails, dates, IDs)
+Result:          LLM only handles hard cases → 60-80% cost reduction
+```
+
+### Entity Extraction Pipeline — Detailed Status
+
+| Sub-component | Status | Details |
+|---------------|--------|---------|
+| Define entity schema | ⬜ Not started | Node types: Person, Service, Team, Tool, Concept. Relationship types: OWNS, MEMBER_OF, DEPENDS_ON, etc. |
+| Bedrock IAM permissions | ⬜ Not started | Add `bedrock:InvokeModel` to bastion IAM role |
+| Extraction prompt engineering | ⬜ Not started | Design prompt that tells Claude how to extract entities and relationships |
+| Structured output parsing | ⬜ Not started | Parse Claude's JSON response into validated Entity/Relationship objects |
+| Single-chunk extraction | ⬜ Not started | Extract entities from one chunk, validate output |
+| Multi-chunk extraction | ⬜ Not started | Process all chunks from a document, aggregate entities |
+| Entity resolution / dedup | ⬜ Not started | "Alice Chen" and "Alice" → same entity, merge them |
+| Confidence scoring | ⬜ Not started | Track LLM confidence for each extraction |
+| Error handling & retries | ⬜ Not started | Handle Bedrock throttling, malformed responses, timeouts |
+| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → extract → validate |
+
+---
+
 ## License
 
 MIT
