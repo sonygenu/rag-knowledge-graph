@@ -320,9 +320,9 @@ Neptune runs in your AWS VPC. To set it up:
 | File type detection (magic bytes) | ✅ Complete | Validates format using first 261 bytes, rejects unsupported types with 4xx |
 | Document parsing (Docling + RapidOCR) | ✅ Complete | Supports PDF, DOCX, PPTX, HTML, Markdown, TXT |
 | Excel parsing (openpyxl) | ✅ Complete | Streaming read_only mode, converts sheets to markdown tables |
-| Multi-format testing | ✅ Complete | Tested with .md, .txt, .html, .xlsx on bastion |
-| Chunking | ✅ Complete | Hybrid format-aware: section-based, table row-group, paragraph-based |
-| PDF parsing with OCR | ⬜ Not started | Scanned PDF support via RapidOCR (infra ready, needs test PDFs) |
+| PDF OCR (scanned documents) | ✅ Complete | Smart detection (digital vs scanned), RapidOCR for image-based PDFs |
+| Multi-format testing | ✅ Complete | Tested with .md, .txt, .html, .xlsx, digital PDF, scanned PDF on bastion |
+| Chunking | ✅ Complete | Hybrid format-aware: section-based, table row-group, paragraph-based, page-based (OCR) |
 | S3 integration | ⬜ Not started | Load documents from S3 buckets instead of local filesystem |
 | Batch processing | ⬜ Not started | Process large document sets concurrently |
 
