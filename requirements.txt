@@ -1,5 +1,6 @@
-# Document parsing (Docling with Tesseract OCR - lightweight, no PyTorch)
+# Document parsing (Docling with RapidOCR - Python-only, no system packages)
 docling>=2.0.0
+rapidocr>=3.0.0
 
 # AWS SDK
 boto3>=1.34.0

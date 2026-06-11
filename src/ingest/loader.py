@@ -1,16 +1,15 @@
 """
-Document Loader & Parser using Docling with Tesseract OCR.
+Document Loader & Parser using Docling with RapidOCR.
 
-Uses Docling with SimplePipeline and Tesseract for OCR on scanned PDFs.
-Lightweight — no PyTorch required.
+Uses Docling with SimplePipeline and RapidOCR for scanned PDFs.
+RapidOCR is Python-only (ONNX-based) — no system packages needed.
 
 Usage:
     python -m src.ingest.loader                    # Parse all files in data/
     python -m src.ingest.loader data/myfile.pdf    # Parse a specific file
 
 Prerequisites (on bastion):
-    sudo yum install tesseract -y
-    pip3 install docling
+    pip3 install docling rapidocr
 """
 import os
 import sys
@@ -19,7 +18,7 @@ from dataclasses import dataclass, field
 
 from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractOcrOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
 from docling.pipeline.simple_pipeline import SimplePipeline
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 
@@ -37,23 +36,21 @@ class ParsedDocument:
 
 def create_converter(enable_ocr: bool = True) -> DocumentConverter:
     """
-    Create a Docling converter with Tesseract OCR.
+    Create a Docling converter with RapidOCR.
     
-    - PDFs: Uses pypdfium2 backend + Tesseract OCR (lightweight)
+    - PDFs: Uses pypdfium2 backend + RapidOCR (Python-only, ONNX-based)
     - DOCX/PPTX/HTML/MD: Uses SimplePipeline (no ML models)
     
     Args:
         enable_ocr: Whether to enable OCR for scanned PDFs (default: True)
     """
-    # PDF options with Tesseract OCR
+    # PDF options with RapidOCR
     pdf_options = PdfPipelineOptions()
     pdf_options.do_ocr = enable_ocr
     pdf_options.do_table_structure = False  # Skip heavy table model
 
     if enable_ocr:
-        pdf_options.ocr_options = TesseractOcrOptions(
-            lang=["eng"],  # Add more languages as needed: ["eng", "spa", "fra"]
-        )
+        pdf_options.ocr_options = RapidOcrOptions()
 
     converter = DocumentConverter(
         allowed_formats=[
