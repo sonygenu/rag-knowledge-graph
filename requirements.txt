@@ -1,0 +1,13 @@
+# Document parsing (Docling)
+docling>=2.0.0
+
+# AWS SDK
+boto3>=1.34.0
+
+# Graph Database (Neptune)
+requests>=2.31.0
+requests-aws4auth>=1.2.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.7.0

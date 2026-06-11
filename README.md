@@ -156,7 +156,110 @@ Vector search handles fuzzy, semantic similarity. The knowledge graph handles pr
 
 ---
 
-## Architecture (Planned)
+## Document Ingestion Pipeline
+
+This is the first component we're building — validating each step locally end-to-end before moving forward.
+
+```
+Load Docs → Parse → Chunk → Extract Entities → Resolve & Dedup → Load to Neo4j
+```
+
+### Step 1: Document Loading & Parsing
+
+- Accept documents (PDF, DOCX, HTML, Markdown)
+- Use **Docling** or PyMuPDF to extract clean text
+- Preserve document structure (headings, sections, tables)
+- Output: raw text + metadata (source, page, section)
+
+### Step 2: Chunking
+
+- Split documents into meaningful segments (by section, paragraph, or semantic boundary)
+- Maintain metadata per chunk: source file, page number, section heading
+- Configurable chunk size and overlap
+
+### Step 3: Entity & Relationship Extraction
+
+- Use LLM (AWS Bedrock Claude) to extract structured entities and relationships from each chunk
+- Prompt with a defined schema: extract people, services, teams, concepts
+- Output as structured JSON: `{entities: [...], relationships: [...]}`
+
+### Step 4: Entity Resolution & Deduplication
+
+- Normalize entity names ("AWS Lambda", "Lambda", "lambda function" → single node)
+- Merge duplicate entities across chunks
+- Assign canonical IDs
+
+### Step 5: Load into Neo4j
+
+- Create nodes with labels and properties
+- Create relationships with types and properties
+- Create vector embeddings on nodes/chunks for hybrid search
+
+### Step 6: Index & Validate
+
+- Create indexes for fast lookup (full-text, vector, composite)
+- Validate graph connectivity
+- Log stats (nodes created, relationships formed, duplicates merged)
+
+---
+
+### Project Structure
+
+```
+rag-knowledge-graph/
+├── src/
+│   ├── ingest/                # Step 1 & 2: Document loading, parsing, chunking
+│   │   ├── loader.py          # Accept and load documents
+│   │   ├── parser.py          # Extract text with structure preserved
+│   │   └── chunker.py         # Split into meaningful segments
+│   ├── extract/               # Step 3: LLM-powered extraction
+│   │   ├── entity_extractor.py
+│   │   └── prompts.py         # Extraction prompts and output schemas
+│   ├── resolve/               # Step 4: Entity resolution
+│   │   └── resolver.py        # Normalize, dedup, assign IDs
+│   ├── graph/                 # Step 5 & 6: Neo4j operations
+│   │   ├── neo4j_client.py    # Connection management
+│   │   ├── schema.py          # Node labels, relationship types, constraints
+│   │   └── loader.py          # Create nodes and relationships
+│   └── config/
+│       └── settings.py        # Neo4j, LLM, and chunking configuration
+├── data/                      # Sample documents for testing
+├── tests/
+├── docker-compose.yml         # Local Neo4j instance
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+### Infrastructure Setup (Neptune Serverless)
+
+Neptune runs in your AWS VPC. To set it up:
+
+1. **Create a Neptune Serverless cluster** in the AWS Console
+   - Go to Neptune → Create database → Serverless
+   - Choose a VPC and subnets
+   - Set min/max NCUs (start with 1/2.5 for dev)
+
+2. **Connect from your laptop** (Neptune is VPC-only):
+   - Option A: SSH tunnel through a bastion/EC2 in the same VPC
+   - Option B: Use AWS Cloud9 in the same VPC
+   - Option C: Use a VPN connection to the VPC
+
+3. **Update `.env`** with your Neptune endpoint:
+   ```
+   NEPTUNE_ENDPOINT=your-cluster.cluster-xxxxx.us-west-2.neptune.amazonaws.com
+   NEPTUNE_PORT=8182
+   ```
+
+4. **Verify connection:**
+   ```bash
+   curl -X POST https://$NEPTUNE_ENDPOINT:8182/openCypher \
+     --data-urlencode "query=RETURN 1"
+   ```
+
+---
+
+## Architecture (Full System — Planned)
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -185,12 +288,13 @@ Vector search handles fuzzy, semantic similarity. The knowledge graph handles pr
 
 ## Tech Stack
 
-- **Graph Database:** Neo4j
+- **Graph Database:** Amazon Neptune Serverless (openCypher)
 - **LLM:** AWS Bedrock (Claude)
 - **Entity Extraction:** LLM-powered with structured output
-- **Vector Search:** Neo4j vector index
+- **Vector Search:** Neptune vector similarity (or OpenSearch)
 - **Framework:** LangChain / LlamaIndex
 - **Language:** Python
+- **Infrastructure:** AWS (Neptune, Bedrock, VPC)
 
 ---
 
