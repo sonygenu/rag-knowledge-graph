@@ -293,6 +293,7 @@ def chunk_document(parsed_doc, max_size: int = 1500, rows_per_chunk: int = 30) -
     Chunk a ParsedDocument using the hybrid strategy.
     
     Detects content type and applies the best chunking approach:
+    - Scanned PDF (OCR'd) → page-based chunking
     - Structured (has headers) → section-based
     - Tabular (markdown tables) → row-group based
     - Plain text → paragraph-based
@@ -300,6 +301,17 @@ def chunk_document(parsed_doc, max_size: int = 1500, rows_per_chunk: int = 30) -
     text = parsed_doc.markdown
     source = parsed_doc.source
     
+    # Special handling for scanned PDFs (OCR output is flat text, page-separated)
+    is_scanned_pdf = parsed_doc.metadata.get("pdf_type") == "scanned"
+    is_hybrid_pdf = parsed_doc.metadata.get("pdf_type") == "hybrid"
+    
+    if is_scanned_pdf or is_hybrid_pdf:
+        logger.info(f"Using page-based chunking for scanned/hybrid PDF: {source}")
+        chunks = chunk_by_pages(text, source, max_size=max_size)
+        logger.info(f"Chunked {source} → {len(chunks)} chunks (page-based)")
+        return chunks
+    
+    # Standard detection for non-scanned documents
     content_type = detect_content_type(text)
     logger.info(f"Detected content type: '{content_type}' for {source}")
     
@@ -311,6 +323,91 @@ def chunk_document(parsed_doc, max_size: int = 1500, rows_per_chunk: int = 30) -
         chunks = chunk_by_paragraphs(text, source, max_size=max_size)
     
     logger.info(f"Chunked {source} → {len(chunks)} chunks")
+    return chunks
+
+
+def chunk_by_pages(text: str, source: str, max_size: int = 1500) -> list:
+    """
+    Chunk OCR'd text by page boundaries.
+    
+    Scanned PDFs parsed by Docling typically have page breaks as sections.
+    If pages are too large, split further by paragraphs.
+    If pages are too small, merge with the next page.
+    
+    Falls back to paragraph-based if no page structure is detected.
+    """
+    # Docling separates pages with markdown headers or page markers
+    # Try splitting on common page separators
+    page_patterns = [
+        r'\n---\s*\n',           # Horizontal rules between pages
+        r'\n#{1,2}\s+Page\s+\d+',  # "## Page 1" style markers
+    ]
+    
+    pages = None
+    for pattern in page_patterns:
+        parts = re.split(pattern, text)
+        if len(parts) > 1:
+            pages = parts
+            break
+    
+    # If no page markers found, split by large paragraph gaps
+    if pages is None or len(pages) <= 1:
+        # Fall back: split by double blank lines (paragraph groups)
+        pages = re.split(r'\n{3,}', text)
+    
+    # If still just one big chunk, use paragraph-based splitting
+    if len(pages) <= 1:
+        logger.info(f"No page structure found in {source}, falling back to paragraph chunking")
+        return chunk_by_paragraphs(text, source, max_size=max_size)
+    
+    chunks = []
+    chunk_index = 0
+    current_chunk = ""
+    current_page_start = 1
+    
+    for page_num, page_text in enumerate(pages, 1):
+        page_text = page_text.strip()
+        if not page_text:
+            continue
+        
+        # Would adding this page exceed max_size?
+        if len(current_chunk) + len(page_text) + 2 > max_size and current_chunk:
+            # Emit current chunk
+            chunks.append(Chunk(
+                content=current_chunk.strip(),
+                metadata={
+                    "source": source,
+                    "section": f"Pages {current_page_start}-{page_num - 1}",
+                    "chunk_index": chunk_index,
+                    "content_type": "ocr_text",
+                    "char_count": len(current_chunk.strip()),
+                    "page_range": f"{current_page_start}-{page_num - 1}",
+                }
+            ))
+            chunk_index += 1
+            current_chunk = ""
+            current_page_start = page_num
+        
+        current_chunk += page_text + "\n\n"
+    
+    # Don't forget the last chunk
+    if current_chunk.strip():
+        chunks.append(Chunk(
+            content=current_chunk.strip(),
+            metadata={
+                "source": source,
+                "section": f"Pages {current_page_start}-{len(pages)}",
+                "chunk_index": chunk_index,
+                "content_type": "ocr_text",
+                "char_count": len(current_chunk.strip()),
+                "page_range": f"{current_page_start}-{len(pages)}",
+            }
+        ))
+    
+    # If no chunks were created (all empty), fall back
+    if not chunks:
+        return chunk_by_paragraphs(text, source, max_size=max_size)
+    
     return chunks
 
 
