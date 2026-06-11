@@ -214,7 +214,10 @@ class ParsedDocument:
 
 def create_converter(enable_ocr: bool = True) -> DocumentConverter:
     """
-    Create a Docling converter with RapidOCR.
+    Create a Docling converter.
+    
+    - OCR enabled: Uses StandardPdfPipeline with RapidOCR
+    - OCR disabled: Uses SimplePipeline (faster, no models)
     """
     pdf_options = PdfPipelineOptions()
     pdf_options.do_ocr = enable_ocr
@@ -222,6 +225,11 @@ def create_converter(enable_ocr: bool = True) -> DocumentConverter:
 
     if enable_ocr:
         pdf_options.ocr_options = RapidOcrOptions()
+        # StandardPdfPipeline is required for OCR
+        from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+        pdf_pipeline_cls = StandardPdfPipeline
+    else:
+        pdf_pipeline_cls = SimplePipeline
 
     converter = DocumentConverter(
         allowed_formats=[
@@ -233,7 +241,7 @@ def create_converter(enable_ocr: bool = True) -> DocumentConverter:
         ],
         format_options={
             InputFormat.PDF: PdfFormatOption(
-                pipeline_cls=SimplePipeline,
+                pipeline_cls=pdf_pipeline_cls,
                 backend=PyPdfiumDocumentBackend,
                 pipeline_options=pdf_options,
             ),
