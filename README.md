@@ -321,10 +321,10 @@ Neptune runs in your AWS VPC. To set it up:
 | Document parsing (Docling + RapidOCR) | ✅ Complete | Supports PDF, DOCX, PPTX, HTML, Markdown, TXT |
 | Excel parsing (openpyxl) | ✅ Complete | Streaming read_only mode, converts sheets to markdown tables |
 | Multi-format testing | ✅ Complete | Tested with .md, .txt, .html, .xlsx on bastion |
-| Chunking | 🔧 In Progress | Hybrid strategy — see below |
-| PDF parsing with OCR | ⬜ Not started | Scanned PDF support via RapidOCR |
-| S3 integration | ⬜ Not started | Load documents from S3 buckets |
-| Batch processing | ⬜ Not started | Process large document sets |
+| Chunking | ✅ Complete | Hybrid format-aware: section-based, table row-group, paragraph-based |
+| PDF parsing with OCR | ⬜ Not started | Scanned PDF support via RapidOCR (infra ready, needs test PDFs) |
+| S3 integration | ⬜ Not started | Load documents from S3 buckets instead of local filesystem |
+| Batch processing | ⬜ Not started | Process large document sets concurrently |
 
 ---
 
