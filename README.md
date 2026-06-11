@@ -547,18 +547,60 @@ Result:          LLM only handles hard cases → 60-80% cost reduction
 
 ### Entity Extraction Pipeline — Detailed Status
 
+**Approach: Auto-Discovery** — The LLM discovers entity/relationship types from the customer's documents automatically. No predefined schema needed.
+
+```
+Customer documents → Sample chunks → LLM discovers schema → Customer reviews → Schema locked → Extract from all chunks
+```
+
 | Sub-component | Status | Details |
 |---------------|--------|---------|
-| Define entity schema | ⬜ Not started | Node types: Person, Service, Team, Tool, Concept. Relationship types: OWNS, MEMBER_OF, DEPENDS_ON, etc. |
+| Schema auto-discovery | ⬜ Not started | LLM reads sample chunks and proposes entity types + relationship types |
+| Schema review & lock | ⬜ Not started | Output discovered schema as JSON for customer to review/edit |
 | Bedrock IAM permissions | ⬜ Not started | Add `bedrock:InvokeModel` to bastion IAM role |
-| Extraction prompt engineering | ⬜ Not started | Design prompt that tells Claude how to extract entities and relationships |
-| Structured output parsing | ⬜ Not started | Parse Claude's JSON response into validated Entity/Relationship objects |
-| Single-chunk extraction | ⬜ Not started | Extract entities from one chunk, validate output |
-| Multi-chunk extraction | ⬜ Not started | Process all chunks from a document, aggregate entities |
+| Discovery prompt engineering | ⬜ Not started | Prompt that tells LLM: "What entity types and relationship types exist in this text?" |
+| Extraction prompt engineering | ⬜ Not started | Prompt that uses discovered schema to extract entities and relationships from each chunk |
+| Structured output parsing | ⬜ Not started | Parse LLM JSON response into validated Entity/Relationship objects |
+| Single-chunk extraction | ⬜ Not started | Extract entities from one chunk using discovered schema |
+| Multi-chunk extraction | ⬜ Not started | Process all chunks, aggregate entities across document |
 | Entity resolution / dedup | ⬜ Not started | "Alice Chen" and "Alice" → same entity, merge them |
 | Confidence scoring | ⬜ Not started | Track LLM confidence for each extraction |
 | Error handling & retries | ⬜ Not started | Handle Bedrock throttling, malformed responses, timeouts |
-| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → extract → validate |
+| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → discover schema → extract → validate |
+
+### Auto-Discovery Flow
+
+```
+Step 1: Sample Selection
+    Pick 3-5 representative chunks from the document(s)
+
+Step 2: Schema Discovery (LLM call)
+    Prompt: "Read these text samples. What types of entities exist?
+             What relationships connect them? Propose a schema."
+    
+    LLM returns:
+    {
+        "entity_types": [
+            {"name": "Person", "description": "A team member or individual"},
+            {"name": "Service", "description": "A software service or system"},
+            ...
+        ],
+        "relationship_types": [
+            {"name": "OWNS", "from_type": "Person", "to_type": "Service"},
+            {"name": "DEPENDS_ON", "from_type": "Service", "to_type": "Service"},
+            ...
+        ]
+    }
+
+Step 3: Schema Review (optional)
+    Customer can edit, add, or remove types before proceeding
+
+Step 4: Extraction (LLM calls per chunk)
+    Using the locked schema, extract entities and relationships from every chunk
+
+Step 5: Entity Resolution
+    Merge duplicates: "Alice Chen", "Alice", "A. Chen" → single node
+```
 
 ---
 
