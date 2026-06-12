@@ -613,18 +613,19 @@ Customer documents → Sample chunks → LLM discovers schema → Customer revie
 
 | Sub-component | Status | Details |
 |---------------|--------|---------|
-| Schema auto-discovery | ⬜ Not started | LLM reads sample chunks and proposes entity types + relationship types |
-| Schema review & lock | ⬜ Not started | Output discovered schema as JSON for customer to review/edit |
-| Bedrock IAM permissions | ⬜ Not started | Add `bedrock:InvokeModel` to bastion IAM role |
-| Discovery prompt engineering | ⬜ Not started | Prompt that tells LLM: "What entity types and relationship types exist in this text?" |
-| Extraction prompt engineering | ⬜ Not started | Prompt that uses discovered schema to extract entities and relationships from each chunk |
-| Structured output parsing | ⬜ Not started | Parse LLM JSON response into validated Entity/Relationship objects |
-| Single-chunk extraction | ⬜ Not started | Extract entities from one chunk using discovered schema |
-| Multi-chunk extraction | ⬜ Not started | Process all chunks, aggregate entities across document |
-| Entity resolution / dedup | ⬜ Not started | "Alice Chen" and "Alice" → same entity, merge them |
+| Schema auto-discovery | ✅ Code complete | LLM reads sample chunks and proposes entity types + relationship types |
+| Schema review & lock | ✅ Code complete | Output discovered schema as JSON for customer to review/edit |
+| Bedrock IAM permissions | ✅ Complete | `bedrock:*` policy attached to bastion IAM role |
+| Bedrock model access | ✅ Complete | Identified active model: `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| Discovery prompt engineering | ✅ Code complete | Prompt tells LLM to propose entity/relationship types from sample chunks |
+| Extraction prompt engineering | ✅ Code complete | Prompt uses discovered schema to extract entities and relationships per chunk |
+| Structured output parsing | ✅ Code complete | Parses LLM JSON response into validated Entity/Relationship objects |
+| Single-chunk extraction | ✅ Code complete | Extracts entities from one chunk using discovered schema |
+| Multi-chunk extraction | ✅ Code complete | Processes all chunks, aggregates entities across document |
+| Entity resolution / dedup | ✅ Code complete | Deduplicates entities by name+type, merges properties |
 | Confidence scoring | ⬜ Not started | Track LLM confidence for each extraction |
 | Error handling & retries | ⬜ Not started | Handle Bedrock throttling, malformed responses, timeouts |
-| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → discover schema → extract → validate |
+| End-to-end test | 🔧 In Progress | Bedrock model ID needs update, then full pipeline test |
 
 ### Auto-Discovery Flow
 
