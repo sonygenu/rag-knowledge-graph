@@ -16,7 +16,7 @@ import boto3
 logger = logging.getLogger(__name__)
 
 # Default model — update if different model is available
-MODEL_ID = "anthropic.claude-3-5-haiku-20241022-v1:0"
+MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 AWS_REGION = "us-east-1"
 
 DISCOVERY_PROMPT = """You are a knowledge graph schema designer. Your job is to analyze text samples and discover what types of entities and relationships exist.
