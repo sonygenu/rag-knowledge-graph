@@ -309,7 +309,7 @@ Neptune runs in your AWS VPC. To set it up:
 | Entity/relationship extraction | ✅ Complete | Auto-discovery schema + LLM extraction + retry logic + tested |
 | Vector embeddings | ⬜ Not started | Embed chunks → store embeddings for semantic search |
 | Chunk text storage | ⬜ Not started | Store chunk text + link to entity nodes ([:MENTIONS]) |
-| Graph schema & loading | ⬜ Not started | Write entities/relationships/chunks to Neptune |
+| Graph schema & loading | 🔧 In Progress | Neptune client working, schema auto-discovered, loader next |
 | Query engine (NL → Cypher) | ⬜ Not started | Natural language to openCypher |
 | Hybrid retrieval (graph + vector) | ⬜ Not started | Graph traversal + vector similarity combined |
 | Agentic RAG layer | ⬜ Not started | Multi-step reasoning, tool selection, self-correction |
@@ -687,8 +687,9 @@ Write extracted entities and relationships to Neptune as a knowledge graph.
 
 | Sub-component | Status | Details | Why You Need It |
 |---------------|--------|---------|-----------------|
-| Neptune client (openCypher) | ⬜ Not started | Authenticated connection to Neptune via IAM SigV4 | Neptune doesn't accept raw Python. You need a client that: connects to HTTPS endpoint, authenticates with SigV4, sends openCypher queries, receives JSON results |
-| Graph schema design | ⬜ Not started | Define node labels, relationship types, properties, constraints | Without a schema, nodes have inconsistent labels and queries fail. Defines the structure the graph enforces |
+| Neptune client (openCypher) | ✅ Complete | boto3 neptunedata client with auto SigV4 signing | Neptune doesn't accept raw Python. You need a client that: connects to HTTPS endpoint, authenticates with SigV4, sends openCypher queries, receives JSON results |
+| Graph schema design | ✅ Complete | Auto-discovered via entity extraction (entity types + relationship types) | Without a schema, nodes have inconsistent labels and queries fail. Our schema is discovered from the documents themselves |
+| Neptune health check & stats | ✅ Complete | Health check, node/relationship counts, schema summary | Verify Neptune is reachable and inspect graph state before/after loading |
 | Create entity nodes | ⬜ Not started | Write Person, Service, Team, etc. nodes with properties | Entities are the "things" in your knowledge graph — each becomes a queryable node |
 | Create relationship edges | ⬜ Not started | Write OWNS, MEMBER_OF, DEPENDS_ON edges between nodes | Relationships are what make a graph powerful — they encode how things connect |
 | Create chunk nodes | ⬜ Not started | Store chunk text as (:Chunk) nodes for retrieval | During retrieval, you need the actual text to feed to the LLM for answer generation |
