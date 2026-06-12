@@ -623,9 +623,10 @@ Customer documents → Sample chunks → LLM discovers schema → Customer revie
 | Single-chunk extraction | ✅ Code complete | Extracts entities from one chunk using discovered schema | `extract_from_chunk()` — one Bedrock call per chunk |
 | Multi-chunk extraction | ✅ Code complete | Processes all chunks, aggregates entities across document | `extract_from_all_chunks()` + `aggregate_results()` — loops and deduplicates |
 | Entity resolution / dedup | ✅ Code complete | Deduplicates entities by name+type, merges properties | Key = `name::type`, merges properties across chunks |
-| Confidence scoring | ⬜ Not started | Track LLM confidence for each extraction | — |
 | Error handling & retries | ⬜ Not started | Handle Bedrock throttling, malformed responses, timeouts | — |
 | End-to-end test | 🔧 In Progress | Bedrock model ID needs update, then full pipeline test | Model ID identified, code ready to run |
+
+> **Note:** Confidence scoring (LLM self-scoring + frequency-based) will be added later as part of accuracy benchmarking and evaluation.
 
 ### Auto-Discovery Flow
 
