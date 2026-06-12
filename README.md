@@ -768,11 +768,51 @@ We chose Titan Embed V2 because:
 - **Configurable dimensions** — start at 1024, can reduce to 256 later to save storage
 - **AWS-native** — data stays in VPC, no external API calls
 
+### Embedding Storage & Index — Options Compared
+
+| Option | Storage | Index Type | Combined Graph+Vector? | Scale | Cost | Setup | Maturity | Best For |
+|--------|---------|-----------|----------------------|-------|------|-------|----------|----------|
+| **Neptune (vector property)** | Embedding as node property | Neptune built-in vector index | ✅ One query | Good (<10M vectors) | Included in Neptune | Zero | Newer feature | Simplest architecture, small scale |
+| **OpenSearch Serverless** ✅ | Dedicated vector store | HNSW kNN index | ❌ Two calls (vector + graph) | Excellent (100M+) | ~$0.24/hr + storage | Moderate | Proven, battle-tested | Production, large scale, fast search |
+| **OpenSearch Managed** | Dedicated vector store | HNSW kNN index | ❌ Two calls | Excellent (100M+) | Instance-based (~$0.10/hr+) | Moderate | Proven | Full control over cluster config |
+| **Neptune Analytics** | Separate Neptune engine | Built-in vector | ✅ One query | Good | Pay per query | Moderate | Newer | Analytics + vector combined |
+| **Pinecone** | Cloud vector DB | Proprietary index | ❌ External service | Excellent | $0.08/1M vectors/mo | Easy (API) | Mature | Pure vector search, no AWS lock-in |
+| **pgvector (RDS PostgreSQL)** | PostgreSQL extension | IVFFlat / HNSW | ❌ Separate DB | Good (<5M) | RDS instance cost | Moderate | Stable | Teams already on PostgreSQL |
+
+### Why We Chose OpenSearch Serverless
+
+| Reason | Details |
+|--------|---------|
+| **Purpose-built for vector search** | HNSW index is optimized for fast approximate nearest-neighbor — sub-10ms at any scale |
+| **Proven at production scale** | Powers Amazon Q Business, Knowledge Bases for Bedrock, and other AWS AI products |
+| **Serverless = no capacity planning** | Scales automatically with workload — no instance sizing decisions |
+| **Separation of concerns** | Graph (Neptune) handles structural queries, OpenSearch handles semantic search — each does what it's best at |
+| **AWS-native** | Same VPC, IAM auth, CloudWatch metrics — fits our existing architecture |
+| **Battle-tested kNN** | Handles 100M+ vectors efficiently — Neptune's vector search is newer and less proven at scale |
+| **Future-proof** | If we grow to millions of documents, OpenSearch won't be the bottleneck |
+
+### Architecture with OpenSearch
+
+```
+Retrieval query
+    ├── OpenSearch: "Find top-5 chunks by semantic similarity" (fast, ~5ms)
+    └── Neptune: "Traverse graph from those chunks" (structural, ~50ms)
+         ↓
+    Combined context → LLM → Answer
+```
+
+```
+Ingestion:
+    Chunk → Titan V2 (embed) → OpenSearch (store + index)
+                             → Neptune (store as :Chunk node, link to entities)
+```
+
 ### Vector Embeddings Pipeline — Detailed Status
 
 | Sub-component | Status | Details | Why You Need It |
 |---------------|--------|---------|-----------------|
 | Choose embedding model | ✅ Complete | Evaluated 8 models on cost, scalability, accuracy, input size | Chose Titan Embed V2 (1024 dims): cheapest, 8K input, zero setup, AWS-native |
+| Choose vector storage & index | ✅ Complete | Evaluated 5 storage options (see comparison below) | Chose OpenSearch Serverless: proven at scale, purpose-built for vector search |
 | Embedding client | ⬜ Not started | Connect to embedding service, generate vectors from text | Converts human-readable text into searchable numerical vectors |
 | Embed all chunks | ⬜ Not started | Generate embedding for each chunk in the document | Every chunk needs a vector to be searchable by meaning |
 | Store embeddings | ⬜ Not started | Write embedding vectors to chunk nodes | Vectors must be persisted alongside chunk text for retrieval |
