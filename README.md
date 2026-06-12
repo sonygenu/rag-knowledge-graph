@@ -697,7 +697,7 @@ Write extracted entities and relationships to Neptune as a knowledge graph.
 | Upsert logic (idempotent) | ✅ Complete | All queries use MERGE — safe to re-run without duplicates | If you re-process a document, you don't want duplicate nodes. MERGE creates OR updates |
 | Full pipeline orchestrator | ✅ Complete | `python3 -m src.graph.loader <file>` runs parse→chunk→extract→load | Single command to go from raw document to populated graph |
 | Batch loading | ✅ Complete | UNWIND batches of 10 entities/relationships per Neptune call | Reduces network round trips 10x. Falls back to one-by-one if batch fails |
-| Schema validation | ⬜ Not started | Verify nodes/edges match expected schema after loading | Catch extraction errors early — ensure no orphan nodes or broken relationships |
+| Schema validation | ✅ Complete | 5 validation checks: schema compliance, orphans, dangling chunks, duplicates, direction | Found 9 warnings + 1 error — quality issues to iterate on (duplicates, schema drift) |
 | Graph visualization | ✅ Complete | Query nodes/relationships from bastion CLI | Inspect what's in the graph after loading |
 | End-to-end test | ✅ Complete | Full pipeline tested: 26 entities, 21 relationships, 8 chunks, 40 MENTIONS links loaded | Proved entire pipeline from raw markdown to populated Neptune graph |
 
