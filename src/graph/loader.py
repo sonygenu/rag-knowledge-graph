@@ -28,92 +28,172 @@ class GraphLoader:
     """
     Loads entities, relationships, and chunks into Neptune.
     Uses MERGE for idempotent upserts — running twice won't create duplicates.
+    Supports batch loading — multiple entities/relationships per Neptune call.
     """
 
-    def __init__(self, client: NeptuneClient = None):
+    def __init__(self, client: NeptuneClient = None, batch_size: int = 10):
         self.client = client or NeptuneClient()
+        self.batch_size = batch_size
         self._stats = {"nodes_created": 0, "relationships_created": 0, "chunks_created": 0}
 
-    # --- Step 1: Load Entity Nodes ---
+    # --- Step 1: Load Entity Nodes (Batched) ---
 
     def load_entities(self, entities: List[Entity]) -> int:
         """
-        Create entity nodes in Neptune using MERGE (upsert).
+        Create entity nodes in Neptune using batched MERGE (upsert).
         
-        Each entity becomes a node with:
-        - Label from entity_type (e.g., :Person, :Service)
-        - Properties from entity.properties + name
+        Groups entities by type and loads in batches of self.batch_size.
+        Each batch is a single Neptune call using UNWIND.
         
         Returns: number of entities loaded
         """
-        count = 0
+        # Group entities by type (UNWIND works best with same label)
+        by_type = {}
         for entity in entities:
             if not entity.name or not entity.entity_type:
                 logger.warning(f"Skipping entity with missing name or type: {entity}")
                 continue
+            by_type.setdefault(entity.entity_type, []).append(entity)
 
-            # Build SET clause for properties
+        count = 0
+        for entity_type, type_entities in by_type.items():
+            # Process in batches
+            for i in range(0, len(type_entities), self.batch_size):
+                batch = type_entities[i:i + self.batch_size]
+                batch_count = self._batch_merge_entities(entity_type, batch)
+                count += batch_count
+
+        self._stats["nodes_created"] += count
+        logger.info(f"Loaded {count}/{len(entities)} entity nodes (batch_size={self.batch_size})")
+        return count
+
+    def _batch_merge_entities(self, entity_type: str, batch: List[Entity]) -> int:
+        """
+        MERGE a batch of entities of the same type in a single Neptune call.
+        
+        Uses UNWIND to process a list of entities in one query:
+          UNWIND [{name:'Alice', role:'Engineer'}, ...] AS props
+          MERGE (n:Person {name: props.name})
+          SET n += props
+        """
+        # Build the list of property maps
+        entity_maps = []
+        for entity in batch:
+            props = {"name": entity.name}
+            props.update({k: str(v) for k, v in entity.properties.items()})
+            entity_maps.append(props)
+
+        # UNWIND query — processes entire batch in one call
+        query = f"""
+            UNWIND {json.dumps(entity_maps)} AS props
+            MERGE (n:`{entity_type}` {{name: props.name}})
+            SET n += props
+            RETURN count(n) AS loaded
+        """
+
+        try:
+            result = self.client.execute_query(query)
+            loaded = result[0]["loaded"] if result else 0
+            logger.debug(f"  Batch loaded {loaded} [{entity_type}] nodes")
+            return len(batch)
+        except Exception as e:
+            logger.error(f"  Batch failed for [{entity_type}]: {e}")
+            # Fallback: try one by one
+            return self._fallback_load_entities(entity_type, batch)
+
+    def _fallback_load_entities(self, entity_type: str, batch: List[Entity]) -> int:
+        """Fallback: load entities one by one if batch fails."""
+        count = 0
+        for entity in batch:
             props = {"name": entity.name}
             props.update(entity.properties)
             set_clause = ", ".join([f"n.`{k}` = '{v}'" for k, v in props.items()])
-
-            # MERGE ensures no duplicates — creates if not exists, updates if exists
             query = f"""
-                MERGE (n:`{entity.entity_type}` {{name: '{entity.name}'}})
+                MERGE (n:`{entity_type}` {{name: '{entity.name}'}})
                 SET {set_clause}
                 RETURN n.name AS name
             """
-
             try:
                 self.client.execute_query(query)
                 count += 1
-                logger.debug(f"  Loaded entity: [{entity.entity_type}] {entity.name}")
             except Exception as e:
                 logger.error(f"  Failed to load entity {entity.name}: {e}")
-
-        self._stats["nodes_created"] += count
-        logger.info(f"Loaded {count}/{len(entities)} entity nodes")
         return count
 
-    # --- Step 2: Load Relationship Edges ---
+    # --- Step 2: Load Relationship Edges (Batched) ---
 
     def load_relationships(self, relationships: List[Relationship]) -> int:
         """
-        Create relationship edges in Neptune using MERGE (upsert).
+        Create relationship edges in Neptune using batched MERGE.
         
-        MATCHes the from/to entity nodes by name, creates the edge.
+        Groups by relationship type and loads in batches.
         
         Returns: number of relationships loaded
         """
-        count = 0
+        # Group by relationship type
+        by_type = {}
         for rel in relationships:
             if not rel.from_entity or not rel.to_entity or not rel.relationship_type:
                 logger.warning(f"Skipping relationship with missing data: {rel}")
                 continue
+            by_type.setdefault(rel.relationship_type, []).append(rel)
 
-            # MATCH both nodes by name, MERGE the relationship
+        count = 0
+        for rel_type, type_rels in by_type.items():
+            for i in range(0, len(type_rels), self.batch_size):
+                batch = type_rels[i:i + self.batch_size]
+                batch_count = self._batch_merge_relationships(rel_type, batch)
+                count += batch_count
+
+        self._stats["relationships_created"] += count
+        logger.info(f"Loaded {count}/{len(relationships)} relationships (batch_size={self.batch_size})")
+        return count
+
+    def _batch_merge_relationships(self, rel_type: str, batch: List[Relationship]) -> int:
+        """
+        MERGE a batch of relationships of the same type in a single Neptune call.
+        
+        Uses UNWIND to process multiple relationships at once.
+        """
+        rel_maps = [
+            {"from_name": rel.from_entity, "to_name": rel.to_entity}
+            for rel in batch
+        ]
+
+        query = f"""
+            UNWIND {json.dumps(rel_maps)} AS rel
+            MATCH (from {{name: rel.from_name}})
+            MATCH (to {{name: rel.to_name}})
+            MERGE (from)-[r:`{rel_type}`]->(to)
+            RETURN count(r) AS loaded
+        """
+
+        try:
+            result = self.client.execute_query(query)
+            loaded = result[0]["loaded"] if result else 0
+            logger.debug(f"  Batch loaded {loaded} [{rel_type}] relationships")
+            return len(batch)
+        except Exception as e:
+            logger.error(f"  Batch failed for [{rel_type}]: {e}")
+            # Fallback: one by one
+            return self._fallback_load_relationships(batch)
+
+    def _fallback_load_relationships(self, batch: List[Relationship]) -> int:
+        """Fallback: load relationships one by one if batch fails."""
+        count = 0
+        for rel in batch:
             query = f"""
                 MATCH (from {{name: '{rel.from_entity}'}})
                 MATCH (to {{name: '{rel.to_entity}'}})
                 MERGE (from)-[r:`{rel.relationship_type}`]->(to)
                 RETURN from.name AS from_name, to.name AS to_name
             """
-
             try:
                 result = self.client.execute_query(query)
                 if result:
                     count += 1
-                    logger.debug(f"  Loaded: ({rel.from_entity}) -[{rel.relationship_type}]-> ({rel.to_entity})")
-                else:
-                    logger.warning(
-                        f"  Relationship not created (nodes not found?): "
-                        f"({rel.from_entity}) -[{rel.relationship_type}]-> ({rel.to_entity})"
-                    )
             except Exception as e:
-                logger.error(f"  Failed to load relationship {rel}: {e}")
-
-        self._stats["relationships_created"] += count
-        logger.info(f"Loaded {count}/{len(relationships)} relationships")
+                logger.error(f"  Failed: {rel}: {e}")
         return count
 
     # --- Step 3: Load Chunk Nodes ---
