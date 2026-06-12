@@ -71,21 +71,21 @@ class GraphLoader:
         """
         MERGE a batch of entities of the same type in a single Neptune call.
         
-        Uses UNWIND to process a list of entities in one query:
-          UNWIND [{name:'Alice', role:'Engineer'}, ...] AS props
-          MERGE (n:Person {name: props.name})
-          SET n += props
+        Uses UNWIND with Neptune-compatible map syntax.
         """
-        # Build the list of property maps
-        entity_maps = []
+        # Build Neptune-compatible map list: [{name: 'Alice', role: 'Engineer'}, ...]
+        map_entries = []
         for entity in batch:
             props = {"name": entity.name}
             props.update({k: str(v) for k, v in entity.properties.items()})
-            entity_maps.append(props)
+            # Neptune wants: {name: 'value', role: 'value'} (no quotes on keys)
+            pairs = ", ".join([f"{k}: '{v}'" for k, v in props.items()])
+            map_entries.append(f"{{{pairs}}}")
 
-        # UNWIND query — processes entire batch in one call
+        maps_str = "[" + ", ".join(map_entries) + "]"
+
         query = f"""
-            UNWIND {json.dumps(entity_maps)} AS props
+            UNWIND {maps_str} AS props
             MERGE (n:`{entity_type}` {{name: props.name}})
             SET n += props
             RETURN count(n) AS loaded
@@ -153,15 +153,17 @@ class GraphLoader:
         """
         MERGE a batch of relationships of the same type in a single Neptune call.
         
-        Uses UNWIND to process multiple relationships at once.
+        Uses UNWIND with Neptune-compatible map syntax.
         """
-        rel_maps = [
-            {"from_name": rel.from_entity, "to_name": rel.to_entity}
-            for rel in batch
-        ]
+        # Build Neptune-compatible map list
+        map_entries = []
+        for rel in batch:
+            map_entries.append(f"{{from_name: '{rel.from_entity}', to_name: '{rel.to_entity}'}}")
+
+        maps_str = "[" + ", ".join(map_entries) + "]"
 
         query = f"""
-            UNWIND {json.dumps(rel_maps)} AS rel
+            UNWIND {maps_str} AS rel
             MATCH (from {{name: rel.from_name}})
             MATCH (to {{name: rel.to_name}})
             MERGE (from)-[r:`{rel_type}`]->(to)
