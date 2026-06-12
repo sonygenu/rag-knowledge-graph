@@ -106,6 +106,7 @@ TEXT TO EXTRACT FROM:
 def extract_from_chunk(chunk, schema: dict, model_id: str = MODEL_ID) -> ExtractionResult:
     """
     Extract entities and relationships from a single chunk using the schema.
+    Includes retry logic with exponential backoff.
     
     Args:
         chunk: A Chunk object from the chunker
@@ -120,20 +121,11 @@ def extract_from_chunk(chunk, schema: dict, model_id: str = MODEL_ID) -> Extract
     logger.info(f"Extracting from chunk: section='{chunk.metadata.get('section', '?')}', "
                 f"chars={len(chunk.content)}")
 
-    # Call Bedrock
-    client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+    raw_text = _call_bedrock_with_retry(prompt, model_id)
 
-    response = client.invoke_model(
-        modelId=model_id,
-        body=json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 2000,
-            "messages": [{"role": "user", "content": prompt}]
-        })
-    )
-
-    result = json.loads(response["body"].read())
-    raw_text = result["content"][0]["text"]
+    if raw_text is None:
+        logger.warning(f"Failed to extract from chunk after retries")
+        return ExtractionResult(source_chunk=chunk.metadata.get("section", ""))
 
     # Parse response
     extraction = _parse_extraction_response(raw_text)
@@ -144,6 +136,75 @@ def extract_from_chunk(chunk, schema: dict, model_id: str = MODEL_ID) -> Extract
                 f"{len(extraction.relationships)} relationships")
 
     return extraction
+
+
+def _call_bedrock_with_retry(prompt: str, model_id: str, max_retries: int = 3) -> str:
+    """
+    Call Bedrock with exponential backoff and error classification.
+    
+    Returns the response text, or None if all retries fail.
+    """
+    import time
+    import random
+    from botocore.exceptions import ClientError
+
+    client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.invoke_model(
+                modelId=model_id,
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 2000,
+                    "messages": [{"role": "user", "content": prompt}]
+                })
+            )
+
+            result = json.loads(response["body"].read())
+            raw_text = result["content"][0]["text"]
+            
+            # Check for malformed JSON — if so, retry
+            if not _looks_like_json(raw_text):
+                logger.warning(f"Attempt {attempt + 1}: LLM returned non-JSON response, retrying...")
+                if attempt < max_retries - 1:
+                    continue
+            
+            return raw_text
+
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            
+            # No-retry errors (config problems)
+            if error_code in ("AccessDeniedException", "ValidationException"):
+                logger.error(f"Non-retryable error: {error_code} — {e}")
+                return None
+
+            # Retryable errors
+            if error_code in ("ThrottlingException", "ServiceUnavailableException",
+                             "ModelTimeoutException", "InternalServerException"):
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries}: {error_code}, "
+                    f"retrying in {wait_time:.1f}s..."
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Unexpected error: {error_code} — {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Unexpected exception: {e}")
+            return None
+
+    logger.error(f"All {max_retries} attempts failed")
+    return None
+
+
+def _looks_like_json(text: str) -> bool:
+    """Quick check if text looks like it contains JSON."""
+    stripped = text.strip()
+    return stripped.startswith("{") or "{" in stripped
 
 
 def extract_from_all_chunks(chunks: list, schema: dict, model_id: str = MODEL_ID) -> list:

@@ -313,6 +313,7 @@ Neptune runs in your AWS VPC. To set it up:
 | Query engine (NL → Cypher) | ⬜ Not started | Natural language to openCypher |
 | Hybrid retrieval (graph + vector) | ⬜ Not started | Graph traversal + vector similarity combined |
 | Agentic RAG layer | ⬜ Not started | Multi-step reasoning, tool selection, self-correction |
+| Observability | ⬜ Not started | Metrics, logging, monitoring (see details below) |
 | Evaluation & benchmarks | ⬜ Not started | Accuracy, latency, cost tracking |
 
 ### What Gets Stored Where
@@ -623,10 +624,23 @@ Customer documents → Sample chunks → LLM discovers schema → Customer revie
 | Single-chunk extraction | ✅ Code complete | Extracts entities from one chunk using discovered schema | `extract_from_chunk()` — one Bedrock call per chunk |
 | Multi-chunk extraction | ✅ Code complete | Processes all chunks, aggregates entities across document | `extract_from_all_chunks()` + `aggregate_results()` — loops and deduplicates |
 | Entity resolution / dedup | ✅ Code complete | Deduplicates entities by name+type, merges properties | Key = `name::type`, merges properties across chunks |
-| Error handling & retries | ⬜ Not started | Handle Bedrock throttling, malformed responses, timeouts | — |
+| Error handling & retries | ✅ Code complete | Exponential backoff, malformed JSON retry, throttle handling | `_call_bedrock_with_retry()` — 3 attempts, backoff, error classification |
 | End-to-end test | 🔧 In Progress | Bedrock model ID needs update, then full pipeline test | Model ID identified, code ready to run |
 
 > **Note:** Confidence scoring (LLM self-scoring + frequency-based) will be added later as part of accuracy benchmarking and evaluation.
+
+### Error Types & Handling Strategy
+
+| Error | When it happens | Handling | Retries |
+|-------|----------------|----------|---------|
+| **ThrottlingException** | Too many requests per minute | Exponential backoff (1s, 2s, 4s...) + jitter | Up to 3 |
+| **ModelTimeoutException** | LLM takes too long | Retry once, skip chunk if fails again | Up to 2 |
+| **ValidationException** | Chunk exceeds token limit | Log and skip — chunk is too large | No retry |
+| **Malformed JSON response** | LLM returns invalid JSON | Retry with stricter prompt | Up to 2 |
+| **Empty response** | LLM finds no entities | Accept as valid (empty chunk) | No retry |
+| **ServiceUnavailableException** | Bedrock temporarily down | Retry with backoff | Up to 3 |
+| **AccessDeniedException** | IAM/model access issue | Fail immediately — config problem | No retry |
+| **Network timeout** | Connection drops | Retry with backoff | Up to 3 |
 
 ### Auto-Discovery Flow
 
@@ -660,6 +674,32 @@ Step 4: Extraction (LLM calls per chunk)
 
 Step 5: Entity Resolution
     Merge duplicates: "Alice Chen", "Alice", "A. Chen" → single node
+```
+
+---
+
+## Observability (Planned)
+
+Metrics and monitoring to track pipeline health and quality at scale.
+
+| Metric | What it tracks | Why it matters |
+|--------|---------------|----------------|
+| Chunks processed vs failed | Overall success rate per document | Detect broken documents or parsing issues |
+| Retry count per chunk | How often Bedrock calls need retries | Signal to increase provisioned throughput |
+| Throttle events | Rate limit hits over time | Capacity planning |
+| Avg latency per chunk | Time per extraction call | Performance monitoring |
+| Malformed JSON rate | How often LLM returns invalid output | Prompt quality indicator |
+| Entities per document | Average extraction yield | Detect if extraction is underperforming |
+| Entity dedup ratio | How many duplicates merged | Schema quality indicator |
+| Cost per document | Token usage × price | Budget tracking |
+
+### Implementation Plan
+
+```
+Phase 1: Structured logging (Python logging → CloudWatch)
+Phase 2: CloudWatch metrics (custom metrics for each row above)
+Phase 3: Dashboard (CloudWatch dashboard with alarms)
+Phase 4: Alerting (SNS alerts on failure rate > threshold)
 ```
 
 ---
