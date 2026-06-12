@@ -685,18 +685,18 @@ Write extracted entities and relationships to Neptune as a knowledge graph.
 
 ### Graph Loading Pipeline — Detailed Status
 
-| Sub-component | Status | Details | What We Built |
-|---------------|--------|---------|---------------|
-| Neptune client (openCypher) | ⬜ Not started | Authenticated connection to Neptune via IAM SigV4 | — |
-| Graph schema design | ⬜ Not started | Define node labels, relationship types, properties, constraints | — |
-| Create entity nodes | ⬜ Not started | Write Person, Service, Team, etc. nodes with properties | — |
-| Create relationship edges | ⬜ Not started | Write OWNS, MEMBER_OF, DEPENDS_ON edges between nodes | — |
-| Create chunk nodes | ⬜ Not started | Store chunk text as (:Chunk) nodes for retrieval | — |
-| Link chunks to entities | ⬜ Not started | Create [:MENTIONS] edges from chunks to entities | — |
-| Upsert logic (idempotent) | ⬜ Not started | MERGE instead of CREATE — don't duplicate on re-run | — |
-| Batch loading | ⬜ Not started | Load multiple entities/relationships in one transaction | — |
-| Schema validation | ⬜ Not started | Verify nodes/edges match expected schema after loading | — |
-| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → extract → load → query Neptune | — |
+| Sub-component | Status | Details | Why You Need It |
+|---------------|--------|---------|-----------------|
+| Neptune client (openCypher) | ⬜ Not started | Authenticated connection to Neptune via IAM SigV4 | Neptune doesn't accept raw Python. You need a client that: connects to HTTPS endpoint, authenticates with SigV4, sends openCypher queries, receives JSON results |
+| Graph schema design | ⬜ Not started | Define node labels, relationship types, properties, constraints | Without a schema, nodes have inconsistent labels and queries fail. Defines the structure the graph enforces |
+| Create entity nodes | ⬜ Not started | Write Person, Service, Team, etc. nodes with properties | Entities are the "things" in your knowledge graph — each becomes a queryable node |
+| Create relationship edges | ⬜ Not started | Write OWNS, MEMBER_OF, DEPENDS_ON edges between nodes | Relationships are what make a graph powerful — they encode how things connect |
+| Create chunk nodes | ⬜ Not started | Store chunk text as (:Chunk) nodes for retrieval | During retrieval, you need the actual text to feed to the LLM for answer generation |
+| Link chunks to entities | ⬜ Not started | Create [:MENTIONS] edges from chunks to entities | Traceability — know which text passage an entity came from. Enables "show me the source" |
+| Upsert logic (idempotent) | ⬜ Not started | MERGE instead of CREATE — don't duplicate on re-run | If you re-process a document, you don't want duplicate nodes. MERGE creates OR updates |
+| Batch loading | ⬜ Not started | Load multiple entities/relationships in one transaction | One-at-a-time is slow. Batching reduces round trips to Neptune (10x faster) |
+| Schema validation | ⬜ Not started | Verify nodes/edges match expected schema after loading | Catch extraction errors early — ensure no orphan nodes or broken relationships |
+| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → extract → load → query Neptune | Prove the entire pipeline works from raw document to queryable graph |
 
 ### What Gets Written to Neptune
 
