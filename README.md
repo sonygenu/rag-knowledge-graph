@@ -690,14 +690,16 @@ Write extracted entities and relationships to Neptune as a knowledge graph.
 | Neptune client (openCypher) | ✅ Complete | boto3 neptunedata client with auto SigV4 signing | Neptune doesn't accept raw Python. You need a client that: connects to HTTPS endpoint, authenticates with SigV4, sends openCypher queries, receives JSON results |
 | Graph schema design | ✅ Complete | Auto-discovered via entity extraction (entity types + relationship types) | Without a schema, nodes have inconsistent labels and queries fail. Our schema is discovered from the documents themselves |
 | Neptune health check & stats | ✅ Complete | Health check, node/relationship counts, schema summary | Verify Neptune is reachable and inspect graph state before/after loading |
-| Create entity nodes | ⬜ Not started | Write Person, Service, Team, etc. nodes with properties | Entities are the "things" in your knowledge graph — each becomes a queryable node |
-| Create relationship edges | ⬜ Not started | Write OWNS, MEMBER_OF, DEPENDS_ON edges between nodes | Relationships are what make a graph powerful — they encode how things connect |
-| Create chunk nodes | ⬜ Not started | Store chunk text as (:Chunk) nodes for retrieval | During retrieval, you need the actual text to feed to the LLM for answer generation |
-| Link chunks to entities | ⬜ Not started | Create [:MENTIONS] edges from chunks to entities | Traceability — know which text passage an entity came from. Enables "show me the source" |
-| Upsert logic (idempotent) | ⬜ Not started | MERGE instead of CREATE — don't duplicate on re-run | If you re-process a document, you don't want duplicate nodes. MERGE creates OR updates |
+| Create entity nodes | ✅ Code complete | MERGE Person, Service, Team nodes with properties | Entities are the "things" in your knowledge graph — each becomes a queryable node |
+| Create relationship edges | ✅ Code complete | MATCH from/to nodes, MERGE the edge between them | Relationships are what make a graph powerful — they encode how things connect |
+| Create chunk nodes | ✅ Code complete | Store chunk text as (:Chunk) nodes with hash-based IDs | During retrieval, you need the actual text to feed to the LLM for answer generation |
+| Link chunks to entities | ✅ Code complete | Text-match to find mentions, create [:MENTIONS] edges | Traceability — know which text passage an entity came from. Enables "show me the source" |
+| Upsert logic (idempotent) | ✅ Code complete | All queries use MERGE — safe to re-run without duplicates | If you re-process a document, you don't want duplicate nodes. MERGE creates OR updates |
+| Full pipeline orchestrator | ✅ Code complete | `python3 -m src.graph.loader <file>` runs parse→chunk→extract→load | Single command to go from raw document to populated graph |
 | Batch loading | ⬜ Not started | Load multiple entities/relationships in one transaction | One-at-a-time is slow. Batching reduces round trips to Neptune (10x faster) |
 | Schema validation | ⬜ Not started | Verify nodes/edges match expected schema after loading | Catch extraction errors early — ensure no orphan nodes or broken relationships |
-| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → extract → load → query Neptune | Prove the entire pipeline works from raw document to queryable graph |
+| Graph visualization | ✅ Complete | Query nodes/relationships from bastion CLI | Inspect what's in the graph after loading |
+| End-to-end test | 🔧 In Progress | Full pipeline: parse → chunk → extract → load → query Neptune | Prove the entire pipeline works from raw document to queryable graph |
 
 ### What Gets Written to Neptune
 
