@@ -305,13 +305,34 @@ Neptune runs in your AWS VPC. To set it up:
 | Component | Status | Details |
 |-----------|--------|---------|
 | Project setup | ✅ Complete | Repo, structure, infra (Neptune, bastion, IAM) |
-| Document ingestion pipeline | 🔧 In Progress | See breakdown below |
-| Entity/relationship extraction | ⬜ Not started | LLM-powered (Bedrock Claude) |
-| Neo4j graph schema & loading | ⬜ Not started | Write to Neptune |
+| Document ingestion pipeline | ✅ Complete | Parse, chunk, detect file types (PDF, DOCX, Excel, HTML, MD, TXT) |
+| Entity/relationship extraction | 🔧 In Progress | Auto-discovery schema + LLM extraction (Bedrock Claude) |
+| Vector embeddings | ⬜ Not started | Embed chunks → store embeddings for semantic search |
+| Chunk text storage | ⬜ Not started | Store chunk text + link to entity nodes ([:MENTIONS]) |
+| Graph schema & loading | ⬜ Not started | Write entities/relationships/chunks to Neptune |
 | Query engine (NL → Cypher) | ⬜ Not started | Natural language to openCypher |
-| Hybrid retrieval (graph + vector) | ⬜ Not started | Graph + vector combined |
-| RAG chain with LLM | ⬜ Not started | End-to-end Q&A |
-| Evaluation & benchmarks | ⬜ Not started | Accuracy, latency |
+| Hybrid retrieval (graph + vector) | ⬜ Not started | Graph traversal + vector similarity combined |
+| Agentic RAG layer | ⬜ Not started | Multi-step reasoning, tool selection, self-correction |
+| Evaluation & benchmarks | ⬜ Not started | Accuracy, latency, cost tracking |
+
+### What Gets Stored Where
+
+```
+Document → Parse → Chunk ─┬─→ Embed chunk → Vector index (semantic search)
+                          │
+                          ├─→ Store chunk text → Neptune node (:Chunk)
+                          │
+                          ├─→ Extract entities → Neptune nodes (:Person, :Service, etc.)
+                          │
+                          └─→ Link chunks to entities → Neptune edges ([:MENTIONS])
+```
+
+| Storage | What | Used for |
+|---------|------|----------|
+| Neptune (graph) | Entities, relationships, chunk nodes | Structural queries, multi-hop |
+| Neptune (vector index) | Chunk embeddings | Semantic similarity search |
+| Neptune (node property) | Chunk text | Feed actual text to LLM |
+| S3 | Raw original files | Citations, audit trail |
 
 ### Document Ingestion Pipeline — Detailed Status
 
