@@ -679,6 +679,66 @@ Step 5: Entity Resolution
 
 ---
 
+## Graph Schema & Loading (Neptune)
+
+Write extracted entities and relationships to Neptune as a knowledge graph.
+
+### Graph Loading Pipeline — Detailed Status
+
+| Sub-component | Status | Details | What We Built |
+|---------------|--------|---------|---------------|
+| Neptune client (openCypher) | ⬜ Not started | Authenticated connection to Neptune via IAM SigV4 | — |
+| Graph schema design | ⬜ Not started | Define node labels, relationship types, properties, constraints | — |
+| Create entity nodes | ⬜ Not started | Write Person, Service, Team, etc. nodes with properties | — |
+| Create relationship edges | ⬜ Not started | Write OWNS, MEMBER_OF, DEPENDS_ON edges between nodes | — |
+| Create chunk nodes | ⬜ Not started | Store chunk text as (:Chunk) nodes for retrieval | — |
+| Link chunks to entities | ⬜ Not started | Create [:MENTIONS] edges from chunks to entities | — |
+| Upsert logic (idempotent) | ⬜ Not started | MERGE instead of CREATE — don't duplicate on re-run | — |
+| Batch loading | ⬜ Not started | Load multiple entities/relationships in one transaction | — |
+| Schema validation | ⬜ Not started | Verify nodes/edges match expected schema after loading | — |
+| End-to-end test | ⬜ Not started | Full pipeline: parse → chunk → extract → load → query Neptune | — |
+
+### What Gets Written to Neptune
+
+```
+Nodes:
+  (:Person {name: "Alice Chen", role: "Principal Engineer"})
+  (:Service {name: "Plato Ingestion", language: "Python"})
+  (:Team {name: "RAG Ingestion"})
+  (:Chunk {id: "chunk-003", text: "Alice owns...", source: "wiki.md"})
+  (:Document {source: "team-wiki.md", file_type: ".md"})
+
+Edges:
+  (Alice) -[:OWNS]-> (Plato Ingestion)
+  (Alice) -[:MEMBER_OF]-> (RAG Ingestion)
+  (Plato Ingestion) -[:DEPENDS_ON]-> (Neptune)
+  (Chunk-003) -[:MENTIONS]-> (Alice)
+  (Chunk-003) -[:MENTIONS]-> (Plato Ingestion)
+  (Chunk-003) -[:FROM_DOCUMENT]-> (team-wiki.md)
+```
+
+### openCypher Queries for Loading
+
+```cypher
+-- Create a Person node (upsert)
+MERGE (p:Person {name: $name})
+SET p.role = $role, p.updated_at = datetime()
+
+-- Create a relationship
+MATCH (p:Person {name: $from_name})
+MATCH (s:Service {name: $to_name})
+MERGE (p)-[:OWNS]->(s)
+
+-- Create a chunk node linked to entities
+MERGE (c:Chunk {id: $chunk_id})
+SET c.text = $text, c.source = $source
+WITH c
+MATCH (e {name: $entity_name})
+MERGE (c)-[:MENTIONS]->(e)
+```
+
+---
+
 ## Observability (Planned)
 
 Metrics and monitoring to track pipeline health and quality at scale.
