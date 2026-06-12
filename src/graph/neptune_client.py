@@ -1,10 +1,12 @@
 """
 Neptune Client — Authenticated openCypher interface to Amazon Neptune.
 
+Uses boto3 neptunedata client (handles SigV4 signing automatically).
+
 Handles:
-- IAM SigV4 authentication (no passwords, uses AWS credentials)
+- IAM SigV4 authentication (automatic via boto3)
 - openCypher query execution
-- Parameterized queries (safe from injection)
+- Parameterized queries
 - Connection health checks
 - Retry on transient failures
 
@@ -25,21 +27,17 @@ import json
 import logging
 import time
 import random
-from typing import Optional
-from urllib.parse import urlencode
 
 import boto3
-import requests
-from requests_aws4auth import AWS4Auth
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
 # Configuration — loaded from environment or defaults
 NEPTUNE_ENDPOINT = os.getenv(
     "NEPTUNE_ENDPOINT",
-    "db-neptune-1.cluster-chcfphprbn4n.us-east-1.neptune.amazonaws.com"
+    "https://db-neptune-1.cluster-chcfphprbn4n.us-east-1.neptune.amazonaws.com:8182"
 )
-NEPTUNE_PORT = int(os.getenv("NEPTUNE_PORT", "8182"))
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 
 
@@ -47,33 +45,22 @@ class NeptuneClient:
     """
     Client for executing openCypher queries against Amazon Neptune.
     
-    Uses IAM SigV4 signing for authentication — no username/password needed.
+    Uses boto3 neptunedata client — handles SigV4 signing automatically.
     Designed to run from an EC2 instance with an IAM role that has Neptune access.
     """
 
-    def __init__(self, endpoint: str = None, port: int = None, region: str = None):
+    def __init__(self, endpoint: str = None, region: str = None):
         self.endpoint = endpoint or NEPTUNE_ENDPOINT
-        self.port = port or NEPTUNE_PORT
         self.region = region or AWS_REGION
-        self.base_url = f"https://{self.endpoint}:{self.port}"
-        self.opencypher_url = f"{self.base_url}/openCypher"
 
-        # Get AWS credentials for SigV4 signing
-        self._session = boto3.Session(region_name=self.region)
-        self._refresh_auth()
-
-        logger.info(f"NeptuneClient initialized: {self.endpoint}:{self.port} ({self.region})")
-
-    def _refresh_auth(self):
-        """Refresh AWS credentials (handles credential rotation)."""
-        credentials = self._session.get_credentials().get_frozen_credentials()
-        self._auth = AWS4Auth(
-            credentials.access_key,
-            credentials.secret_key,
-            self.region,
-            "neptune-db",
-            session_token=credentials.token,
+        # boto3 handles SigV4 signing automatically
+        self._client = boto3.client(
+            "neptunedata",
+            region_name=self.region,
+            endpoint_url=self.endpoint,
         )
+
+        logger.info(f"NeptuneClient initialized: {self.endpoint} ({self.region})")
 
     def execute_query(self, query: str, parameters: dict = None, max_retries: int = 3) -> list:
         """
@@ -93,66 +80,44 @@ class NeptuneClient:
                 parameters={"name": "Alice Chen"}
             )
         """
-        # Build request body
-        body = {"query": query}
-        if parameters:
-            body["parameters"] = json.dumps(parameters)
-
         for attempt in range(max_retries):
             try:
-                # Refresh auth in case credentials rotated
-                if attempt > 0:
-                    self._refresh_auth()
+                kwargs = {"openCypherQuery": query}
+                if parameters:
+                    kwargs["parameters"] = json.dumps(parameters)
 
-                response = requests.post(
-                    self.opencypher_url,
-                    data=urlencode(body),
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    auth=self._auth,
-                    verify=True,
-                )
+                response = self._client.execute_open_cypher_query(**kwargs)
+                return response.get("results", [])
 
-                # Handle HTTP errors
-                if response.status_code == 200:
-                    result = response.json()
-                    return result.get("results", [])
+            except ClientError as e:
+                error_code = e.response["Error"]["Code"]
 
-                elif response.status_code == 403:
-                    logger.error(f"Access denied (403): Check IAM permissions. Response: {response.text[:200]}")
-                    raise PermissionError(f"Neptune access denied: {response.text[:200]}")
+                # Don't retry auth or validation errors
+                if error_code in ("AccessDeniedException",):
+                    logger.error(f"Access denied: {e}")
+                    raise PermissionError(f"Neptune access denied: {e}")
 
-                elif response.status_code == 400:
-                    # Bad query syntax — don't retry
-                    error_msg = response.text[:500]
-                    logger.error(f"Query error (400): {error_msg}")
-                    raise ValueError(f"Invalid openCypher query: {error_msg}")
+                if error_code in ("MalformedQueryException", "BadRequestException"):
+                    logger.error(f"Query error: {e}")
+                    raise ValueError(f"Invalid openCypher query: {e}")
 
-                elif response.status_code in (429, 500, 503):
-                    # Throttled or server error — retry
+                # Retry on transient errors
+                if error_code in ("ThrottlingException", "InternalFailureException",
+                                 "TooManyRequestsException", "ServiceUnavailableException"):
                     wait_time = (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(
-                        f"Attempt {attempt + 1}/{max_retries}: HTTP {response.status_code}, "
+                        f"Attempt {attempt + 1}/{max_retries}: {error_code}, "
                         f"retrying in {wait_time:.1f}s..."
                     )
                     time.sleep(wait_time)
-
                 else:
-                    logger.error(f"Unexpected HTTP {response.status_code}: {response.text[:200]}")
-                    raise RuntimeError(f"Neptune returned HTTP {response.status_code}")
+                    logger.error(f"Unexpected error: {error_code} — {e}")
+                    raise
 
-            except requests.exceptions.ConnectionError as e:
-                wait_time = (2 ** attempt) + random.uniform(0, 1)
-                logger.warning(
-                    f"Attempt {attempt + 1}/{max_retries}: Connection error, "
-                    f"retrying in {wait_time:.1f}s... ({e})"
-                )
-                time.sleep(wait_time)
-
-            except (PermissionError, ValueError):
-                # Don't retry auth or syntax errors
+            except Exception as e:
+                logger.error(f"Unexpected exception: {e}")
                 raise
 
-        logger.error(f"All {max_retries} attempts failed for query: {query[:100]}")
         raise RuntimeError(f"Failed to execute query after {max_retries} attempts")
 
     def health_check(self) -> dict:
@@ -171,38 +136,26 @@ class NeptuneClient:
     def count_nodes(self, label: str = None) -> int:
         """Count nodes in the graph, optionally filtered by label."""
         if label:
-            query = f"MATCH (n:{label}) RETURN count(n) AS total"
+            query = f"MATCH (n:`{label}`) RETURN count(n) AS total"
         else:
             query = "MATCH (n) RETURN count(n) AS total"
-        
+
         result = self.execute_query(query)
         return result[0]["total"] if result else 0
 
     def count_relationships(self, rel_type: str = None) -> int:
         """Count relationships in the graph, optionally filtered by type."""
         if rel_type:
-            query = f"MATCH ()-[r:{rel_type}]->() RETURN count(r) AS total"
+            query = f"MATCH ()-[r:`{rel_type}`]->() RETURN count(r) AS total"
         else:
             query = "MATCH ()-[r]->() RETURN count(r) AS total"
-        
+
         result = self.execute_query(query)
         return result[0]["total"] if result else 0
 
     def get_schema_summary(self) -> dict:
-        """Get a summary of what's in the graph (node labels, relationship types, counts)."""
-        # Get node labels and counts
-        node_results = self.execute_query(
-            "MATCH (n) RETURN labels(n) AS labels, count(n) AS count"
-        )
-        
-        # Get relationship types and counts
-        rel_results = self.execute_query(
-            "MATCH ()-[r]->() RETURN type(r) AS type, count(r) AS count"
-        )
-
+        """Get a summary of what's in the graph (node counts, relationship counts)."""
         return {
-            "nodes": node_results,
-            "relationships": rel_results,
             "total_nodes": self.count_nodes(),
             "total_relationships": self.count_relationships(),
         }
@@ -240,8 +193,7 @@ if __name__ == "__main__":
         # Schema summary
         print("\n4. Graph schema summary...")
         summary = client.get_schema_summary()
-        print(f"   Nodes by label: {summary['nodes']}")
-        print(f"   Relationships by type: {summary['relationships']}")
+        print(f"   {summary}")
 
         print(f"\n✅ Neptune client working!")
     else:
