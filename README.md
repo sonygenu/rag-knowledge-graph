@@ -306,7 +306,7 @@ Neptune runs in your AWS VPC. To set it up:
 |-----------|--------|---------|
 | Project setup | ✅ Complete | Repo, structure, infra (Neptune, bastion, IAM) |
 | Document ingestion pipeline | ✅ Complete | Parse, chunk, detect file types (PDF, DOCX, Excel, HTML, MD, TXT) |
-| Entity/relationship extraction | 🔧 In Progress | Auto-discovery schema + LLM extraction (Bedrock Claude) |
+| Entity/relationship extraction | ✅ Complete | Auto-discovery schema + LLM extraction + retry logic + tested |
 | Vector embeddings | ⬜ Not started | Embed chunks → store embeddings for semantic search |
 | Chunk text storage | ⬜ Not started | Store chunk text + link to entity nodes ([:MENTIONS]) |
 | Graph schema & loading | ⬜ Not started | Write entities/relationships/chunks to Neptune |
@@ -624,8 +624,9 @@ Customer documents → Sample chunks → LLM discovers schema → Customer revie
 | Single-chunk extraction | ✅ Code complete | Extracts entities from one chunk using discovered schema | `extract_from_chunk()` — one Bedrock call per chunk |
 | Multi-chunk extraction | ✅ Code complete | Processes all chunks, aggregates entities across document | `extract_from_all_chunks()` + `aggregate_results()` — loops and deduplicates |
 | Entity resolution / dedup | ✅ Code complete | Deduplicates entities by name+type, merges properties | Key = `name::type`, merges properties across chunks |
-| Error handling & retries | ✅ Code complete | Exponential backoff, malformed JSON retry, throttle handling | `_call_bedrock_with_retry()` — 3 attempts, backoff, error classification |
-| End-to-end test | 🔧 In Progress | Bedrock model ID needs update, then full pipeline test | Model ID identified, code ready to run |
+| Error handling & retries | ✅ Complete | Exponential backoff, malformed JSON retry, throttle handling | `_call_bedrock_with_retry()` — 3 attempts, backoff, error classification |
+| Error handling tests | ✅ Complete | 8 test scenarios covering all error types | `scripts/test_error_handling.py` — mocks all error paths |
+| End-to-end test | ✅ Complete | Full pipeline: parse → chunk → discover schema → extract → aggregate | Tested on bastion with sample-team-wiki.md |
 
 > **Note:** Confidence scoring (LLM self-scoring + frequency-based) will be added later as part of accuracy benchmarking and evaluation.
 
