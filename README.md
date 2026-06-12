@@ -742,6 +742,25 @@ MERGE (c)-[:MENTIONS]->(e)
 
 ---
 
+## Vector Embeddings
+
+Convert chunk text into numerical vectors for semantic similarity search — "find passages whose meaning is closest to the user's question."
+
+### Vector Embeddings Pipeline — Detailed Status
+
+| Sub-component | Status | Details | Why You Need It |
+|---------------|--------|---------|-----------------|
+| Choose embedding model | ⬜ Not started | Evaluate options (dimensions, cost, speed) | Different models have different accuracy/cost tradeoffs |
+| Embedding client | ⬜ Not started | Connect to embedding service, generate vectors from text | Converts human-readable text into searchable numerical vectors |
+| Embed all chunks | ⬜ Not started | Generate embedding for each chunk in the document | Every chunk needs a vector to be searchable by meaning |
+| Store embeddings | ⬜ Not started | Write embedding vectors to chunk nodes | Vectors must be persisted alongside chunk text for retrieval |
+| Create vector index | ⬜ Not started | Create similarity search index on embeddings | Without an index, search requires scanning all vectors (slow at scale) |
+| Similarity search function | ⬜ Not started | "Find top-k chunks similar to this query" | Core retrieval capability — how the system finds relevant passages |
+| Batch embedding | ⬜ Not started | Embed multiple chunks in one API call | Reduces latency and cost for large document sets |
+| End-to-end test | ⬜ Not started | Embed → store → search → verify results are relevant | Prove semantic search returns the right chunks |
+
+---
+
 ## Observability (Planned)
 
 Metrics and monitoring to track pipeline health and quality at scale.
