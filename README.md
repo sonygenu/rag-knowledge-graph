@@ -611,21 +611,21 @@ Result:          LLM only handles hard cases → 60-80% cost reduction
 Customer documents → Sample chunks → LLM discovers schema → Customer reviews → Schema locked → Extract from all chunks
 ```
 
-| Sub-component | Status | Details |
-|---------------|--------|---------|
-| Schema auto-discovery | ✅ Code complete | LLM reads sample chunks and proposes entity types + relationship types |
-| Schema review & lock | ✅ Code complete | Output discovered schema as JSON for customer to review/edit |
-| Bedrock IAM permissions | ✅ Complete | `bedrock:*` policy attached to bastion IAM role |
-| Bedrock model access | ✅ Complete | Identified active model: `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-| Discovery prompt engineering | ✅ Code complete | Prompt tells LLM to propose entity/relationship types from sample chunks |
-| Extraction prompt engineering | ✅ Code complete | Prompt uses discovered schema to extract entities and relationships per chunk |
-| Structured output parsing | ✅ Code complete | Parses LLM JSON response into validated Entity/Relationship objects |
-| Single-chunk extraction | ✅ Code complete | Extracts entities from one chunk using discovered schema |
-| Multi-chunk extraction | ✅ Code complete | Processes all chunks, aggregates entities across document |
-| Entity resolution / dedup | ✅ Code complete | Deduplicates entities by name+type, merges properties |
-| Confidence scoring | ⬜ Not started | Track LLM confidence for each extraction |
-| Error handling & retries | ⬜ Not started | Handle Bedrock throttling, malformed responses, timeouts |
-| End-to-end test | 🔧 In Progress | Bedrock model ID needs update, then full pipeline test |
+| Sub-component | Status | Details | What We Built |
+|---------------|--------|---------|---------------|
+| Schema auto-discovery | ✅ Code complete | LLM reads sample chunks and proposes entity types + relationship types | `schema_discovery.py` — picks 5 representative chunks, sends to LLM, parses JSON response |
+| Schema review & lock | ✅ Code complete | Output discovered schema as JSON for customer to review/edit | `save_schema()` / `load_schema()` — saves to JSON file, reloadable for extraction |
+| Bedrock IAM permissions | ✅ Complete | `bedrock:*` policy attached to bastion IAM role | Inline policy on `NeptuneBastionSSMRole` |
+| Bedrock model access | ✅ Complete | Identified active model: `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Listed all models, filtered for ACTIVE status |
+| Discovery prompt engineering | ✅ Code complete | Prompt tells LLM to propose entity/relationship types from sample chunks | System prompt: "You are a knowledge graph schema designer" + rules + JSON format enforcement |
+| Extraction prompt engineering | ✅ Code complete | Prompt uses discovered schema to extract entities and relationships per chunk | Injects schema into prompt, tells LLM "extract ONLY these types" from chunk text |
+| Structured output parsing | ✅ Code complete | Parses LLM JSON response into validated Entity/Relationship objects | `_parse_extraction_response()` — handles malformed JSON, regex fallback |
+| Single-chunk extraction | ✅ Code complete | Extracts entities from one chunk using discovered schema | `extract_from_chunk()` — one Bedrock call per chunk |
+| Multi-chunk extraction | ✅ Code complete | Processes all chunks, aggregates entities across document | `extract_from_all_chunks()` + `aggregate_results()` — loops and deduplicates |
+| Entity resolution / dedup | ✅ Code complete | Deduplicates entities by name+type, merges properties | Key = `name::type`, merges properties across chunks |
+| Confidence scoring | ⬜ Not started | Track LLM confidence for each extraction | — |
+| Error handling & retries | ⬜ Not started | Handle Bedrock throttling, malformed responses, timeouts | — |
+| End-to-end test | 🔧 In Progress | Bedrock model ID needs update, then full pipeline test | Model ID identified, code ready to run |
 
 ### Auto-Discovery Flow
 
