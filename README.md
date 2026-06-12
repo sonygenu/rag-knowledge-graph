@@ -746,11 +746,33 @@ MERGE (c)-[:MENTIONS]->(e)
 
 Convert chunk text into numerical vectors for semantic similarity search — "find passages whose meaning is closest to the user's question."
 
+### Embedding Model Comparison
+
+| Model | Provider | Dimensions | Max Input | Cost (per 1M tokens) | Latency/chunk | Scalability | Accuracy | Setup | Data Privacy | Best For |
+|-------|----------|-----------|-----------|---------------------|---------------|-------------|----------|-------|--------------|----------|
+| **Titan Embed V2** ✅ | AWS Bedrock | 256/512/1024 | 8K tokens | ~$0.02 | ~50ms | ✅ Infinite (AWS managed) | Good | Zero | ✅ In AWS | Learning, production, cost-sensitive |
+| Titan Embed V1 | AWS Bedrock | 1536 | 8K tokens | ~$0.10 | ~50ms | ✅ Infinite | Good | Zero | ✅ In AWS | Legacy |
+| Cohere Embed V3 | AWS Bedrock | 1024 | 512 tokens | ~$0.10 | ~50ms | ✅ Infinite | Good | Zero | ✅ In AWS | Multilingual documents |
+| OpenAI embedding-3-small | OpenAI | 1536 | 8K tokens | ~$0.02 | ~80ms | ⚠️ Rate limited | Good | Moderate | ❌ External | Teams on OpenAI |
+| OpenAI embedding-3-large | OpenAI | 3072 | 8K tokens | ~$0.13 | ~100ms | ⚠️ Rate limited | Excellent | Moderate | ❌ External | Max accuracy |
+| all-MiniLM-L6-v2 | Self-hosted | 384 | 512 tokens | $0 | ~5ms | ✅ CPU fleet | Fair | High | ✅ Private | Massive scale, cheap |
+| bge-large-en-v1.5 | Self-hosted | 1024 | 512 tokens | $0 | ~10ms | ✅ GPU fleet | Excellent | High | ✅ Private | Best open-source |
+| nomic-embed-text | Self-hosted | 768 | 8K tokens | $0 | ~15ms | ✅ CPU/GPU | Good | High | ✅ Private | Long context, open-source |
+
+### Our Choice: Amazon Titan Embed V2 (1024 dimensions)
+
+We chose Titan Embed V2 because:
+- **5x cheaper** than Cohere ($0.02 vs $0.10 per 1M tokens)
+- **8K token input** — chunks never get truncated regardless of size
+- **Zero setup** — same IAM role and Bedrock access already configured
+- **Configurable dimensions** — start at 1024, can reduce to 256 later to save storage
+- **AWS-native** — data stays in VPC, no external API calls
+
 ### Vector Embeddings Pipeline — Detailed Status
 
 | Sub-component | Status | Details | Why You Need It |
 |---------------|--------|---------|-----------------|
-| Choose embedding model | ⬜ Not started | Evaluate options (dimensions, cost, speed) | Different models have different accuracy/cost tradeoffs |
+| Choose embedding model | ✅ Complete | Evaluated 8 models on cost, scalability, accuracy, input size | Chose Titan Embed V2 (1024 dims): cheapest, 8K input, zero setup, AWS-native |
 | Embedding client | ⬜ Not started | Connect to embedding service, generate vectors from text | Converts human-readable text into searchable numerical vectors |
 | Embed all chunks | ⬜ Not started | Generate embedding for each chunk in the document | Every chunk needs a vector to be searchable by meaning |
 | Store embeddings | ⬜ Not started | Write embedding vectors to chunk nodes | Vectors must be persisted alongside chunk text for retrieval |
